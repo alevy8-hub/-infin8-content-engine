@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#050505" />
+  <title>iNFiN8 Content Engine</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="brand-wrap">
+      <div class="brand">iNFiN<span>8</span></div>
+      <div class="kicker">CONTENT ENGINE</div>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">CREATE ONCE. DISTRIBUTE iNFiN8. ♾️</p>
+      <h1>You already created the value.<br><strong>Now distribute it.</strong></h1>
+      <p class="sub">Turn one piece of existing content into platform-ready assets in seconds.</p>
+    </section>
+
+    <section class="composer card">
+      <label for="source">SOURCE CONTENT</label>
+      <textarea id="source" placeholder="Paste your article, post, transcript, idea, or story…"></textarea>
+      <div class="composer-actions">
+        <span id="sourceCount" class="muted">0 characters</span>
+        <button id="distributeBtn" class="primary">DISTRIBUTE ♾️</button>
+      </div>
+    </section>
+
+    <section id="results" class="results hidden">
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">YOUR CONTENT MULTIPLIED</p>
+          <h2>1 SOURCE → 8 ASSETS</h2>
+        </div>
+        <div class="metric">
+          <span>ESTIMATED TIME SAVED</span>
+          <strong id="timeSaved">43 min</strong>
+        </div>
+      </div>
+
+      <div id="assetGrid" class="asset-grid"></div>
+    </section>
+
+    <footer>
+      <div class="rule"></div>
+      <p>CREATE ONCE. DISTRIBUTE iNFiN8. ♾️</p>
+      <small>Less repeated work. More reach. More leverage. More time back.</small>
+    </footer>
+  </main>
+
+  <template id="assetTemplate">
+    <article class="asset card">
+      <div class="asset-top">
+        <div>
+          <span class="asset-number"></span>
+          <h3 class="asset-title"></h3>
+        </div>
+        <span class="status">READY</span>
+      </div>
+      <textarea class="asset-output"></textarea>
+      <div class="asset-actions">
+        <button class="secondary copy-btn">COPY</button>
+        <button class="secondary edit-btn">EDIT</button>
+        <button class="secondary export-btn">EXPORT</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

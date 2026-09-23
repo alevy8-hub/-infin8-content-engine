@@ -1,0 +1,229 @@
+
+:root{
+  --bg:#050505;
+  --panel:#0d0d0d;
+  --panel-2:#111;
+  --text:#f6f6f3;
+  --muted:#8e8e8a;
+  --gold:#d7aa2b;
+  --gold-soft:#8f6f16;
+  --line:#242424;
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{
+  margin:0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(215,170,43,.08), transparent 30%),
+    var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  min-height:100vh;
+}
+button,textarea{font:inherit}
+button{cursor:pointer}
+.shell{
+  width:min(1100px,100%);
+  margin:0 auto;
+  padding:36px 18px calc(50px + env(safe-area-inset-bottom));
+}
+.brand-wrap{text-align:center;padding:24px 0 34px}
+.brand{
+  font-size:34px;
+  font-weight:800;
+  letter-spacing:.18em;
+}
+.brand span{color:var(--gold)}
+.kicker{
+  color:var(--gold);
+  font-size:12px;
+  letter-spacing:.34em;
+  margin-top:8px;
+}
+.hero{
+  text-align:center;
+  max-width:760px;
+  margin:0 auto 30px;
+}
+.eyebrow{
+  color:var(--gold);
+  font-size:11px;
+  letter-spacing:.18em;
+  font-weight:700;
+}
+h1{
+  margin:12px 0 14px;
+  font-size:clamp(34px,7vw,64px);
+  line-height:1.03;
+  letter-spacing:-.035em;
+  font-weight:500;
+}
+h1 strong{font-weight:800}
+.sub{
+  color:#b8b8b3;
+  line-height:1.6;
+  font-size:16px;
+  max-width:620px;
+  margin:0 auto;
+}
+.card{
+  background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.01));
+  border:1px solid var(--line);
+  border-radius:22px;
+}
+.composer{
+  padding:18px;
+  max-width:900px;
+  margin:0 auto;
+}
+label{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  letter-spacing:.16em;
+  font-weight:700;
+  margin-bottom:10px;
+}
+textarea{
+  width:100%;
+  resize:vertical;
+  border:0;
+  outline:none;
+  color:var(--text);
+  background:transparent;
+}
+#source{
+  min-height:220px;
+  font-size:17px;
+  line-height:1.55;
+}
+textarea::placeholder{color:#5e5e5a}
+.composer-actions,.asset-actions,.results-head,.asset-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.composer-actions{
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+.muted{color:var(--muted);font-size:12px}
+.primary{
+  border:1px solid var(--gold);
+  background:var(--gold);
+  color:#070707;
+  padding:13px 18px;
+  border-radius:999px;
+  font-weight:800;
+  letter-spacing:.08em;
+}
+.primary:active{transform:scale(.985)}
+.results{margin-top:48px}
+.hidden{display:none}
+.results-head{
+  margin-bottom:18px;
+  align-items:end;
+}
+.results-head h2{
+  margin:4px 0 0;
+  font-size:clamp(26px,5vw,42px);
+  letter-spacing:-.03em;
+}
+.metric{
+  text-align:right;
+  min-width:165px;
+}
+.metric span{
+  display:block;
+  color:var(--muted);
+  font-size:9px;
+  letter-spacing:.14em;
+}
+.metric strong{
+  display:block;
+  color:var(--gold);
+  font-size:22px;
+  margin-top:5px;
+}
+.asset-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.asset{
+  padding:16px;
+  min-width:0;
+}
+.asset-number{
+  color:var(--gold);
+  font-size:10px;
+  letter-spacing:.14em;
+}
+.asset-title{
+  margin:4px 0 0;
+  font-size:20px;
+}
+.status{
+  border:1px solid #2d2d2d;
+  color:#777;
+  font-size:9px;
+  border-radius:999px;
+  padding:6px 8px;
+  letter-spacing:.12em;
+}
+.asset-output{
+  min-height:180px;
+  margin:14px 0;
+  padding:14px;
+  background:#080808;
+  border:1px solid #1f1f1f;
+  border-radius:14px;
+  color:#eaeae7;
+  line-height:1.5;
+}
+.secondary{
+  flex:1;
+  border:1px solid #292929;
+  background:#0b0b0b;
+  color:#d5d5d1;
+  border-radius:999px;
+  padding:10px 8px;
+  font-size:10px;
+  letter-spacing:.12em;
+  font-weight:700;
+}
+.secondary:hover{border-color:var(--gold-soft)}
+.secondary.copied{
+  color:#050505;
+  background:var(--gold);
+  border-color:var(--gold);
+}
+footer{
+  text-align:center;
+  padding:56px 0 10px;
+  color:#777;
+}
+.rule{
+  height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold-soft),transparent);
+  max-width:320px;
+  margin:0 auto 18px;
+}
+footer p{
+  color:#9a9a95;
+  letter-spacing:.13em;
+  font-size:11px;
+}
+footer small{
+  color:#5f5f5c;
+}
+@media(max-width:720px){
+  .shell{padding-top:18px}
+  .brand-wrap{padding-top:12px}
+  .asset-grid{grid-template-columns:1fr}
+  .results-head{align-items:flex-start;flex-direction:column}
+  .metric{text-align:left}
+  .composer-actions{align-items:flex-end}
+  .primary{padding:12px 15px;font-size:13px}
+}
