@@ -94,7 +94,11 @@ test('5. Substack Note stands alone and ends on a complete takeaway', () => {
   const s = adol.outputs.substack;
   assert.ok(s.length <= 700);
   assert.ok(E.splitSentences(s).length >= 3);
-  assert.ok(/understand how it works before you spend a single dollar on it\.$/.test(s), 'should end on the article’s takeaway');
+  // ends on a complete, hedge-preserving takeaway from the article's last third (not a fragment, not a prediction)
+  const last = E.splitSentences(s).pop();
+  const src = adol.doc.sentences.find(x => x.text === last);
+  assert.ok(src && src.order >= adol.doc.sentences.length * 0.55, `should end on a late takeaway: ${last}`);
+  assert.ok(/[.!]$/.test(last));
 });
 
 test('6. CTA is a real invitation from the source with no internal processing text', () => {
@@ -174,7 +178,50 @@ test('ORIGINAL: Story slides follow source order and one idea (question → the 
 });
 test('ORIGINAL: 7 cards READY; CTA NEEDS REVIEW only because the article has no link/CTA ([ADD LINK])', () => {
   kinds.filter(k => k !== 'cta').forEach(k => assert.ok(orig.checks[k].ok, `${k}: ${orig.checks[k].issues.join(' | ')}`));
-  assert.ok(!orig.checks.cta.ok && orig.checks.cta.issues.length === 1 && /placeholder/.test(orig.checks.cta.issues[0]));
+  assert.ok(!orig.checks.cta.ok && orig.checks.cta.issues.length === 1 && /\[ADD LINK\] needs your link/.test(orig.checks.cta.issues[0]));
+});
+test('ORIGINAL CTA: invitation drawn from the article, its own question, a labelled link slot; READY once filled or removed', () => {
+  const c = orig.outputs.cta;
+  assert.ok(/^Learn before you speculate\. Bitcoin rewards curiosity\. Crypto punishes carelessness\.$/m.test(c), c);
+  assert.ok(/How important will Bitcoin be 10, 20 or 30 years from now\? Drop your answer in the comments\.$/m.test(c), c);
+  assert.ok(/^Read the full breakdown: \[ADD LINK\]$/m.test(c), c);
+  assert.ok(!/https?:\/\//.test(c), 'no invented URL');
+  const filled = c.replace('[ADD LINK]', 'https://example.com/post');
+  assert.ok(E.validate('cta', filled, orig.doc, { edited: true }).ok, 'filled link → READY');
+  const removed = c.split('\n').filter(l => !/ADD LINK/.test(l)).join('\n');
+  assert.ok(E.validate('cta', removed, orig.doc).ok, 'link line deleted → READY');
+});
+function closings(r) {
+  return kinds.filter(k => k !== 'cta').map(k => {
+    const ls = r.outputs[k].split('\n').filter(l => l.trim() && !/^#|^≈|Save this|^SLIDE|^CLOSE|^HOOK|^SCRIPT|^ON-SCREEN|\?\s*$|comments\.?$/.test(l));
+    return ls[ls.length - 1];
+  });
+}
+test('endings are diverse: no closing line ends more than one card (ORIGINAL + stand-in)', () => {
+  [orig, adol].forEach(r => {
+    const c = closings(r);
+    assert.strictEqual(new Set(c).size, c.length, c.join(' || '));
+  });
+});
+test('ORIGINAL: meaning/uncertainty preserved — no flattened absolutes, hedges kept verbatim', () => {
+  kinds.forEach(k => {
+    assert.ok(!/nobody owns or controls/i.test(orig.outputs[k]), k);
+    assert.ok(!/Bitcoin will (?:become|be worth|replace)/i.test(orig.outputs[k]), k);
+  });
+  const hedged = kinds.map(k => orig.outputs[k]).join('\n').match(/one popular Bitcoin thesis|may|might|could/gi) || [];
+  assert.ok(hedged.length >= 1, 'hedged framing kept');
+});
+test('ORIGINAL: each card has a distinct platform shape', () => {
+  const o = orig.outputs;
+  assert.ok(o.x.length <= 280 && !/\n.*\n.*\n/.test(o.x.replace(/\n#.*$/, '')));
+  assert.ok(/Key points:/.test(o.linkedin) && /^→ /m.test(o.linkedin));
+  assert.ok(/^• /m.test(o.instagram) && /Save this for later/.test(o.instagram));
+  assert.ok(/\?$/.test(o.facebook.trim()));
+  assert.ok(/HOOK \(0–3s\):/.test(o.reels) && /CLOSE:/.test(o.reels) && /spoken/.test(o.reels));
+  assert.ok(!/^[#•→]/m.test(o.substack));
+  assert.ok(/^SLIDE 1$/m.test(o.story));
+  const openers = ['instagram', 'facebook', 'reels', 'story', 'linkedin'].map(k => o[k].split('\n').filter(l => l.trim() && !/^(HOOK|Bitcoin Explained)/.test(l) && !/^SLIDE/.test(l))[0]);
+  assert.ok(new Set(openers).size >= 2, 'openers vary');
 });
 test('ORIGINAL: no arrow diagrams, bare analogies, list fragments or quoted dialogue used as standalone points', () => {
   kinds.forEach(k => {

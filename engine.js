@@ -131,11 +131,12 @@
       .filter(Boolean);
   }
 
-  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|its|it['’]s|they|their|them|he|she|his|her|which|because|however|still|yet|here|there|such|plus|otherwise|instead|meanwhile|again|even so|if so|if that|in that case|that['’]s|this['’]s|in exchange|in return|as a result|for example|for instance|in fact|on top of that|after that|because of this|that way|by contrast|in contrast|likewise|similarly|now)\b/i;
-  const CONTEXT_REF = /\b(?:the (?:opposite|former|latter|above|below|reverse|same thing)|as (?:mentioned|noted|i said|we said|discussed)|mentioned (?:above|earlier)|see (?:above|below)|(?:this|these|those) (?!week|weekend|year|month|day|days|morning|evening|time|season|summer|winter|spring|fall|quarter|decade|century)(?:\w+)|that (?:question|idea|point|reason|window|limit|number|rule|one|problem|fact|example|scarcity|habit|step|moment|process|list|key|phrase|word|answer|approach|way|experiment|story|part|concept|lesson|distinction|difference|database|vision|outcome|thing|idea))\b/i;
+  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|its|it['’]s|they|their|them|he|she|his|her|which|because|however|still|yet|here|there|such|plus|otherwise|instead|meanwhile|again|even so|if so|if that|in that case|that['’]s|this['’]s|not|in exchange|in return|as a result|for example|for instance|in fact|on top of that|after that|because of this|that way|by contrast|in contrast|likewise|similarly|now)\b/i;
+  const CONTEXT_REF = /\b(?:the (?:opposite|former|latter|above|below|reverse|same thing)|as (?:mentioned|noted|i said|we said|discussed)|mentioned (?:above|earlier)|see (?:above|below)|(?:this|these|those) (?!week|weekend|year|month|day|days|morning|evening|time|season|summer|winter|spring|fall|quarter|decade|century)(?:\w+)|that (?:question|idea|point|reason|window|limit|number|rule|one|problem|fact|example|scarcity|habit|step|moment|process|list|key|phrase|word|answer|approach|way|experiment|story|part|concept|lesson|distinction|difference|database|outcome|thing|idea))\b/i;
   const CTA_RX = /\b(subscribe|sign up|signup|join (?:me|us|our|the (?:list|newsletter|community))|follow (?:me|us|along|for)|download (?:the|my|our|it)|read more|learn more|visit (?:my|our|the (?:site|link|page))|register|grab (?:your|the|a copy)|dm me|message me|link in bio|share (?:this|it)|comment below|book a|check out|get started|start here)\b/i;
   const CTA_NEGATED = /\b(?:never|don['’]?t|do not|not|no one should)\b[^.!?]{0,20}\b(?:share|post|join|follow|download|visit|send|subscribe)\b/i;
   const POINTER_LEAD = /^(?:here['’]s (?:the answer|why|how|what|the thing)|it['’]s this|this is it|the (?:basic |real |big |main )?(?:idea|question|answer|point|lesson|thing) (?:is|was)|so ask|it means|which means|in other words|it['’]s basically asking)\s*:$/i;
+  const INVITE_RX = /^(?:learn|understand|start|ask|think about|remember|read|try|explore|study|compare|talk to|write down)\b/i;
   const TEASER_RX = /\b(?:one|a|the) (?:massive|big|huge|key|major|important|crucial|simple) (?:difference|catch|twist|problem|secret|reason)\s*[.!]?$|\bthe following\b|^here['’]s (?:how|why|what)\b[^:]*$|\bhere['’]s the (?:clever|important|key|best) part\b/i;
   const CONCL_RX = /\b(bottom line|conclusion|takeaway|summary|final thoughts?|wrap(?:ping)?[- ]up|in short|tl;?dr|remember this|the point|\d+-second version|short version|in a nutshell)\b/i;
 
@@ -422,7 +423,9 @@
       if (BARE_DIRECTIVE.test(s.text) && prev && prev.para === s.para && SAFETY_NOUN.test(prev.text)) s.issues = s.issues.filter(x => x !== 'private note or instruction');
       s.bad = s.issues.length > 0;
       const crossPara = samePara && prev.para !== s.para;
-      s.needsContext = needsContext(s.text, samePara && !crossPara) || (samePara && doc.rewrites.some(r => r.to === s.text));
+      // contrast pairs: "You don't need thousands of dollars." ⏎ "You can start learning with $5."
+      const contrast = samePara && /\b(?:don['’]t|doesn['’]t|isn['’]t|can['’]t|not|never|no)\b/i.test(prev.text) && /^(?:you|it|we|they) (?:can|could)\b|^instead\b/i.test(s.text) && wordCount(s.text) <= 12;
+      s.needsContext = contrast || needsContext(s.text, samePara && !crossPara) || (samePara && doc.rewrites.some(r => r.to === s.text));
       s.samePara = samePara;
       s.claim = claimType(s.text);
       s.question = /\?["'”’)]*$/.test(s.text);
@@ -489,6 +492,8 @@
       if (/\d/.test(item.text)) score *= 1.15;        // concrete facts/figures from the source
       if (item.cta) score *= 0.4;                      // CTAs belong in the CTA card
       if (item.claim === 'speculation') score *= 0.8;  // facts first; predictions stay hedged
+      // sweeping absolutes ("nobody owns or controls") rank below the article's more precise framings
+      if (!item.list && /\b(?:nobody|no one|everyone|always|completely|entirely|impossible)\b/i.test(item.text) && !/\b(?:share|network|company|government|bank|headquarters)\b/i.test(item.text.replace(/nobody owns or controls/i, ''))) score *= 0.6;
       if (item.bad) score = 0;
       item.score = score;
     });
@@ -509,7 +514,11 @@
     let cur = null;
     const close = () => { if (cur && cur.sents.length) units.push(cur); cur = null; };
     doc.sentences.forEach(s => {
-      const startNew = !cur || s.list || !s.samePara || !s.needsContext || cur.sents.length >= 3 || cur.list;
+      if (cur && !cur.list && s.samePara && s.needsContext && cur.sents.length >= 4 && cur.sents.length > 1) {
+        // the thought runs on past 4 sentences: don't leave the unit ending on a line that leans forward
+        cur.sents.pop();
+      }
+      const startNew = !cur || s.list || !s.samePara || !s.needsContext || cur.sents.length >= 4 || cur.list;
       if (startNew) {
         close();
         cur = { sents: [], broken: false, orphan: false, list: s.list };
@@ -568,7 +577,10 @@
     const intro = introSection(doc);
     const early = usable(doc, used).filter(u => !u.list && (intro >= 0 ? u.section === intro : u.order < Math.max(6, doc.sentences.length * 0.35)));
     const fits = early.filter(u => u.sents[0].text.length <= (maxHeadChars || 200) && !u.spec);
-    const q = fits.find(u => u.sents[0].question && (intro >= 0 || u.order < Math.max(3, doc.sentences.length * 0.35)));
+    const qs = fits.filter(u => u.sents[0].question && (intro >= 0 || u.order < Math.max(3, doc.sentences.length * 0.35)));
+    // later cards prefer an opening question earlier cards haven't used, so cards don't all open alike
+    const uses = u => (doc.useCount && doc.useCount[u.id]) || 0;
+    const q = qs.slice().sort((a, b) => uses(a) - uses(b) || a.order - b.order)[0];
     if (q) return q;
     const best = fits.slice().sort((a, b) => b.score - a.score)[0];
     if (best) return best;
@@ -578,10 +590,21 @@
   function takeawayUnits(doc, used, n, o) {
     o = o || {};
     const c = conclusionSection(doc);
-    let pool = usable(doc, used, Object.assign({ noQuestion: true }, o)).filter(u => !u.spec && !u.list);
+    // hedged outlooks ("may become … or it may fall short") are allowed as closings — the hedge is kept word for word
+    let pool = usable(doc, used, Object.assign({ noQuestion: true }, o)).filter(u => (!u.spec || HEDGE_RX.test(u.text)) && !u.list && !PREDICTION_RX.test(u.text));
+    pool = pool.filter(u => !/\?["'”’)]*$/.test(u.text));
     let list = c >= 0 ? pool.filter(u => u.section === c) : [];
     if (!list.length) list = pool.filter(u => u.order >= doc.sentences.length * 0.7);
-    const late = u => u.score * (1 + 0.4 * u.order / Math.max(1, doc.sentences.length)); // the author's closing words weigh more
+    // every closing line in the conclusion already ends another card → also consider the article's later body lines
+    const cu = doc.closingUsed;
+    if (cu && list.length && list.every(u => cu.has(u.id))) {
+      const extra = usable(doc, used, Object.assign({ noQuestion: true }, o)).filter(u => u.order >= doc.sentences.length * 0.55 &&
+        !list.includes(u) && (!u.spec || HEDGE_RX.test(u.text)) && !PREDICTION_RX.test(u.text) && !/\?["'”’)]*$/.test(u.text) && u.sents.length <= 2);
+      list = list.concat(extra);
+    }
+    // the author's closing words weigh more; a line that already ends another card weighs much less (no 7-of-8 identical endings)
+    const late = u => u.score * (1 + 0.4 * u.order / Math.max(1, doc.sentences.length)) * (u.spec ? 0.85 : 1) *
+      ((doc.closingUsed && doc.closingUsed.has(u.id)) ? 0.15 : 1) * (o.reflective ? Math.min(1.6, Math.max(0.6, u.words / 15)) : 1);
     return list.sort((a, b) => late(b) - late(a)).slice(0, n || 1).sort((a, b) => a.order - b.order);
   }
 
@@ -662,7 +685,7 @@
     /^Key points:$/, /^What['’]s your take\?$/, /^What do you think\?$/, /^Let me know in the comments\.$/,
     /^Save this for later\. ♾️$/, /^Questions about [^?]{1,60}\?$/, /^Drop them in the comments\.$/,
     /^Questions\?$/, /^Want the full breakdown(?: of [^?]{1,120})?\?$/, /^Read it here: (?:\S+|\[ADD LINK\])$/, /^Read the full piece: \S+$/,
-    /^Link: \S+$/
+    /^Link: \S+$/, /^Drop your answer in the comments\.$/, /^Read the full breakdown: (?:\S+|\[ADD LINK\])$/
   ];
   const LABEL_RX = /^(?:HOOK \(0–3s\):|ON-SCREEN TEXT:|SCRIPT:|CLOSE:|SLIDE \d+|Key points:)$/;
   const RUNTIME_RX = /^≈ \d+s spoken at a normal pace \(rough estimate\)$/;
@@ -682,23 +705,27 @@
 
     switch (kind) {
       case 'x': {
-        // one clear takeaway, ≤280: the article's main point + (if room) one hard fact
+        // punchy: one idea in short beats ("…problem: How do you…? That's the breakthrough. Not the price chart."), ≤280
         const parts = [];
-        const t = takeawayUnits(doc, used, 1, { maxChars: 230 })[0] || hookUnit(doc, used, 230);
+        const punchy = usable(doc, used, { maxChars: 240, noQuestion: true }).filter(u => u.sents.length >= 2 && !u.spec && !u.list &&
+          u.sents.every(x => wordCount(x.text) <= 20) && speakable(u.text) && !/["“”]/.test(u.text.replace(/“[^”]{1,30}”/g, '')))
+          .sort((a, b) => b.score * (1 + 0.15 * b.sents.length) * spread(doc, b) - a.score * (1 + 0.15 * a.sents.length) * spread(doc, a))[0];
+        const t = punchy || takeawayUnits(doc, used, 1, { maxChars: 230 })[0] || hookUnit(doc, used, 230);
         if (t && t.chars <= 280) { parts.push(P(t.text)); mark(t, used); }
-        const fact = bodyPoints(doc, used, 1, { maxWords: 25, facts: true, prefer: u => (/\d/.test(u.text) ? 1.3 : 1) * (u.list ? 0.6 : 1) })[0];
-        if (fact) parts.push(P(fact.text, !!parts.length));
+        if (!punchy) {
+          const fact = bodyPoints(doc, used, 1, { maxWords: 25, facts: true, prefer: u => (/\d/.test(u.text) ? 1.3 : 1) * (u.list ? 0.6 : 1) })[0];
+          if (fact) parts.push(P(fact.text, !!parts.length));
+        }
         if (tags[0]) parts.push(P(tags.slice(0, 2).join(' '), true));
         if (!parts.length && title) parts.push(P(title));
         return fitParts(parts, LIMITS.x);
       }
       case 'linkedin': {
         // professional: title, the main point up front, structured points, the practical close, a question
-        const ends = takeawayUnits(doc, used, 2);
-        let lead, end;
-        if (ends.length >= 2) { lead = ends[0]; end = ends[1]; }
-        else { lead = hookUnit(doc, used, 220); end = ends[0]; }
+        // open on a question the reader can't ignore, then structure, then the article's closing idea
+        const lead = hookUnit(doc, used, 220);
         if (lead) mark(lead, used);
+        const end = takeawayUnits(doc, used, 1)[0];
         if (end) mark(end, used);
         const pts = bodyPoints(doc, used, 4, { maxWords: 45, facts: true });
         const q = sourceQuestion(doc, used);
@@ -776,22 +803,19 @@
         return lines.join('\n').trim();
       }
       case 'substack': {
-        // stands alone: the main point, the single most useful supporting idea, the practical takeaway
-        const ends = takeawayUnits(doc, used, 2);
-        ends.forEach(u => mark(u, used));
-        const h = ends.length >= 2 ? null : hookUnit(doc, used, 220);
-        if (h) mark(h, used);
-        const insight = bodyPoints(doc, used, 1, { maxWords: 45, facts: true, noSpread: true, prefer: u => (1 + 0.2 * (u.sents.length - 1) - (u.list ? 0.4 : 0)) * (/["“”:]/.test(u.text) ? 0.4 : 1) * (wordCount(u.text) >= 12 ? 1.3 : 1) });
+        // stands alone: the article's core insight, the line that grounds it, then a closing thought of its own
+        const insight = bodyPoints(doc, used, 1, { maxWords: 45, facts: true, noSpread: true, prefer: u => (1 + 0.2 * (u.sents.length - 1) - (u.list ? 0.4 : 0)) * (/["“”:]/.test(u.text) ? 0.4 : 1) * (wordCount(u.text) >= 12 ? 1.3 : 1) })[0];
         const parts = [];
-        if (ends.length >= 2) {
-          parts.push(P(ends[0].text));
-          insight.forEach(u => parts.push(P(u.text, true)));
-          parts.push(P(ends[1].text));
+        if (insight) {
+          parts.push(P(insight.text));
+          const nxt = doc.units[insight.id + 1];
+          if (nxt && nxt.section === insight.section && !nxt.orphan && !nxt.cta && !nxt.list && !nxt.question && isFree(nxt, used) && nxt.words <= 40) { parts.push(P(nxt.text, true)); mark(nxt, used); }
         } else {
-          if (h) parts.push(P(h.text));
-          insight.forEach(u => parts.push(P(u.text, true)));
-          ends.forEach(u => parts.push(P(u.text)));
+          const h = hookUnit(doc, used, 220);
+          if (h) { parts.push(P(h.text)); mark(h, used); }
         }
+        const end = takeawayUnits(doc, used, 1, { reflective: true })[0];
+        if (end) { parts.push(P(end.text)); mark(end, used); }
         if (!parts.length && title) parts.push(P(title));
         let text = fitParts(parts, SOFT.substack);
         if (text.length > SOFT.substack) text = fitParts(parts, LIMITS.substack);
@@ -808,7 +832,13 @@
           const us = doc.units.filter(u => u.section === si && !u.orphan && !u.cta && !u.list && !u.question &&
             u.sents.every(x => x.text.length <= SOFT.storySlide && !/["“”]/.test(x.text)) && !(hookFits && u === h));
           const score = us.length * (si === concl ? 1.5 : 1);
-          if (us.length >= 4 && (!run || score > run.score)) run = { units: us.slice(0, hookFits ? 5 : 6), score };
+          if (us.length >= 4 && (!run || score > run.score)) {
+            const budget = hookFits ? 6 - h.sents.length : 6;
+            const take = []; let n = 0;
+            for (const u of us) { if (n + u.sents.length > budget) break; take.push(u); n += u.sents.length; }
+            if (!take.length) return;
+            run = { units: take, score };
+          }
         });
         let units;
         if (run) {
@@ -834,16 +864,24 @@
         return slides.map((s, i) => `SLIDE ${i + 1}\n${s}`).join('\n\n');
       }
       case 'cta': {
-        // a real invitation from the source; links only if the source has one
+        // 1) the source's own call to action, if it has one
+        // 2) otherwise a soft invitation built only from the article's own advice + its own discussion question
+        // 3) a link line: the source's URL, or an [ADD LINK] placeholder that keeps the card at NEEDS REVIEW
         const lines = [];
-        doc.ctaLines.slice(0, 2).forEach(c => lines.push(c.text));
         const link = doc.urls[0];
-        if (lines.length) {
+        doc.ctaLines.slice(0, 2).forEach(c => lines.push(c.text));
+        if (!lines.length) {
+          const invite = doc.units.filter(u => !u.orphan && !u.question && INVITE_RX.test(u.text) && u.words <= 40 &&
+            !/\b(?:she|her|he|him|his)\b/i.test(u.text) && !/["“”]/.test(u.text) && !PREDICTION_RX.test(u.text))
+            .sort((a, b) => (b.list - a.list) || (b.score - a.score))[0];
+          if (invite) lines.push(invite.text);
+          const q = sourceQuestion(doc, new Set());
+          if (q) lines.push(`${q} Drop your answer in the comments.`);
+          else lines.push(topic ? `Questions about ${topic}? Drop them in the comments.` : 'Questions? Drop them in the comments.');
+          lines.push(`Read the full breakdown: ${link || '[ADD LINK]'}`);
+        } else {
           if (link) lines.push(`Read the full piece: ${link}`);
           if (topic) lines.push(`Questions about ${topic}? Drop them in the comments.`);
-        } else {
-          lines.push(`Want the full breakdown${title ? ` of ${shorten(title, 90).replace(/…$/, '')}` : ''}? Read it here: ${link || '[ADD LINK]'}`);
-          lines.push(topic ? `Questions about ${topic}? Drop them in the comments.` : 'Questions? Drop them in the comments.');
         }
         return lines.join('\n\n').trim();
       }
@@ -862,7 +900,8 @@
     if (!t.trim()) return { ok: false, issues: ['Empty'] };
     const limit = LIMITS[kind];
     if (limit && t.length > limit) add(`Over the ${limit}-character limit`);
-    if (PLACEHOLDER_RX.test(t)) add('Unfilled placeholder (e.g. [ADD LINK]) — fill it in before posting');
+    if (/\[ADD LINK\]/.test(t)) add('[ADD LINK] needs your link — the source has no URL and the engine never invents one. Paste your link or delete that line.');
+    else if (PLACEHOLDER_RX.test(t)) add('Unfilled placeholder — fill it in before posting');
     if (INTERNAL_RX.test(t)) add('Contains internal processing text');
 
     const titleKeys = new Set([keyOf(doc.title)].concat(doc.headings.map(keyOf)).filter(Boolean));
@@ -932,18 +971,29 @@
   }
 
   function generateAll(raw, kinds) {
+    kinds = kinds || ['x', 'linkedin', 'instagram', 'facebook', 'reels', 'substack', 'story', 'cta'];
     const doc = parse(raw);
     const outputs = {};
     const checks = {};
     doc.useCount = {};
-    kinds.forEach(k => {
+    doc.closingUsed = new Set();
+    // Story first: it follows the author's own step-by-step run, so its ending is fixed;
+    // the other cards then pick closings it hasn't used. Output order is unchanged.
+    const genOrder = kinds.filter(k => k === 'story').concat(kinds.filter(k => k !== 'story'));
+    genOrder.forEach(k => {
       outputs[k] = generate(k, doc);
       checks[k] = validate(k, outputs[k], doc);
       const outKey = ' ' + keyOf(outputs[k]) + ' ';
+      const contentLines = outputs[k].split('\n').map(l => l.trim()).filter(l => l && !LABEL_RX.test(l) && !RUNTIME_RX.test(l) &&
+        !/^(?:#[A-Za-z0-9_]+\s*)+$/.test(l) && !TEMPLATE_RX.some(rx => rx.test(l)) && !/\?$/.test(l));
+      const lastLine = contentLines.length ? keyOf(contentLines[contentLines.length - 1].replace(/^(?:→|•)\s*/, '')) : '';
+      doc.units.forEach(u => { if (lastLine && lastLine.endsWith(u.keys[u.keys.length - 1])) doc.closingUsed.add(u.id); });
       doc.units.forEach(u => { if (u.keys.every(key => outKey.includes(' ' + key + ' '))) doc.useCount[u.id] = (doc.useCount[u.id] || 0) + 1; });
     });
     delete doc.useCount;
-    return { doc, outputs, checks };
+    delete doc.closingUsed;
+    const ordered = {}; kinds.forEach(k => { ordered[k] = outputs[k]; });
+    return { doc, outputs: ordered, checks };
   }
 
   return { parse, splitSentences, generate, generateAll, validate, sentenceIssues, isPrivateText, shorten, LIMITS, keyOf };

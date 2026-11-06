@@ -1,5 +1,7 @@
 # FINAL END-TO-END QC — DJ’s ORIGINAL article
 
+> Content quality (card text, endings, the CTA) is updated in **CONTENT-QUALITY-REPORT.md**, which supersedes the card text below.
+
 Source: `tests/samples/bitcoin-explained-to-an-adolescent-ORIGINAL.txt` — exact file DJ attached (13,159 bytes, md5 `04e34eeab6b479cd7dfd6958ad74b90c`, verified). **No stand-in used.** The source text was not edited.
 Branch `content-engine-preview` · live `main` untouched · generated 11/6/2026, 2:39:11 PM CT.
 
