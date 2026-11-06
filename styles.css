@@ -287,6 +287,8 @@ footer small{
 .stale-banner.hidden{display:none}
 .asset-meta{margin-top:8px;font-size:11px}
 .asset-count.over{color:#e0a43a}
+.asset-review{display:block;margin-top:6px;color:#e0a43a;line-height:1.4}
+.asset-review.hidden{display:none}
 .status.edited{border-color:var(--gold-soft);color:var(--gold)}
 .status.warn{border-color:#7a5a14;color:#e0a43a}
 .asset.is-stale .asset-output{opacity:.72}

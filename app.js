@@ -14,6 +14,7 @@ const sourceUsed = document.getElementById('sourceUsed');
 const staleBanner = document.getElementById('staleBanner');
 
 const STORE_KEY = 'infin8-content-engine';
+let currentDoc = null; // parsed source the current drafts were made from (for validation)
 const MINUTES_PER_DRAFT = 5; // stated assumption, shown in the UI
 
 const platforms = [
@@ -161,14 +162,26 @@ function refreshStatus(card) {
   const limit = Infin8Engine.LIMITS[kind];
   const len = output.value.length;
   count.textContent = limit ? `${len.toLocaleString()} / ${limit.toLocaleString()} characters` : `${len.toLocaleString()} characters`;
+  const review = card.querySelector('.asset-review');
+  const edited = card.dataset.edited === '1';
+  // READY only when the draft passes every quality check (coherence, source fidelity,
+  // platform fit, limits, no private notes, no placeholders) — not just because it exists.
+  const check = Infin8Engine.validate(kind, output.value, currentDoc, { edited });
   let label = 'READY';
   let cls = '';
+  let reasons = [];
   if (!output.value.trim()) { label = 'EMPTY'; cls = 'warn'; }
-  else if (limit && len > limit) { label = 'TOO LONG'; cls = 'warn'; }
+  else if (limit && len > limit) { label = 'TOO LONG'; cls = 'warn'; reasons = check.issues; }
   else if (card.classList.contains('is-stale')) { label = 'OUT OF DATE'; cls = 'warn'; }
-  else if (card.dataset.edited === '1') { label = 'EDITED'; cls = 'edited'; }
+  else if (!check.ok) { label = 'NEEDS REVIEW'; cls = 'warn'; reasons = check.issues; }
+  else if (edited) { label = 'EDITED'; cls = 'edited'; }
   status.textContent = label;
   status.className = 'status' + (cls ? ' ' + cls : '');
+  status.title = reasons.join('\n');
+  if (review) {
+    review.textContent = reasons.length ? 'Check: ' + reasons.slice(0, 3).join(' · ') + (reasons.length > 3 ? ` (+${reasons.length - 3} more)` : '') : '';
+    review.classList.toggle('hidden', !reasons.length);
+  }
   count.classList.toggle('over', !!(limit && len > limit));
 }
 
@@ -190,6 +203,7 @@ function renderOutputs(text, useSavedOutputs = false) {
   assetGrid.innerHTML = '';
   const savedNow = getSavedState();
   const { doc, outputs } = Infin8Engine.generateAll(text, platforms.map(p => p.kind));
+  currentDoc = doc;
 
   platforms.forEach((platform, index) => {
     const node = template.content.cloneNode(true);
@@ -249,8 +263,11 @@ function renderOutputs(text, useSavedOutputs = false) {
 
   timeSaved.textContent = `~${platforms.length * MINUTES_PER_DRAFT} min`;
   const secCount = doc.sections.filter(s => s.sentences.length).length;
+  const skipped = [];
+  if (doc.privateNotes.length) skipped.push(`${doc.privateNotes.length} private note${doc.privateNotes.length > 1 ? 's' : ''}/instruction${doc.privateNotes.length > 1 ? 's' : ''}`);
+  if (doc.rejected.length) skipped.push(`${doc.rejected.length} unclear or unsupported sentence${doc.rejected.length > 1 ? 's' : ''}`);
   sourceUsed.textContent = doc.sentences.length
-    ? `Drafts pulled from all ${doc.sentences.length} sentences${secCount > 1 ? ` across ${secCount} sections` : ''}${doc.title ? ` · Title: “${doc.title}”` : ''}. Facts and sentences come only from your source — review before posting.`
+    ? `Drafts pulled from ${doc.sentences.length} sentences${secCount > 1 ? ` across ${secCount} sections` : ''}${doc.title ? ` · Title: “${doc.title}”` : ''}.${skipped.length ? ` Left out: ${skipped.join(' and ')}.` : ''} Facts and sentences come only from your source — review before posting.`
     : '';
   results.classList.remove('hidden');
 

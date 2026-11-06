@@ -1,13 +1,25 @@
 /*
  * iNFiN8 Content Engine — extractive drafting engine (free, no AI, no network).
  *
- * Every line of every draft is either copied from the source article
- * (whole sentences, list items, headings) or is a neutral format label
- * such as "HOOK" or "[ADD LINK]". Nothing here invents facts, numbers,
- * titles, offers, or links.
+ * Quality-control rules (v0.3):
+ *  - Publishable source text is separated from private notes, editorial
+ *    instructions and anything that reads like a command to the app.
+ *    Those are treated as untrusted data and never appear in a draft.
+ *  - Every sentence is checked before use: incomplete, cut-off, mangled
+ *    (bad line joins), self-contradicting, or unhedged predictions are
+ *    left out instead of published.
+ *  - Sentences that lean on the one before ("This is why…", "But…") are
+ *    only ever used together with that sentence, in source order.
+ *  - Each platform builds its draft from different, complete "idea units";
+ *    no sentence repeats inside one draft.
+ *  - validate() decides READY vs NEEDS REVIEW. Nothing is invented to pass.
  *
- * Works in the browser (window.Infin8Engine) and in Node (module.exports)
- * so it can be tested without a browser.
+ * Every content line in a draft is copied from the source (whole sentences,
+ * list items, headings). The only other text is a small set of neutral
+ * labels/prompts listed in TEMPLATE_RX. No facts, numbers, offers or links
+ * are invented.
+ *
+ * Works in the browser (window.Infin8Engine) and in Node (module.exports).
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -26,6 +38,9 @@
     'across around another however therefore instead whether rather though although since able need needs want wants know take ' +
     'takes going goes come comes see say says said part parts called simply often usually something anything everything nothing ' +
     'someone anyone everyone people time times year years day days today why what step steps section chapter article post ' +
+    'single whole small large big major global real true sure enough least less own tiny huge high low long short full free wrong right ' +
+    'happen happens happened run runs running written write writes keep keeps control controls follow follows add added call calls '+
+    'better worse quick quickly easy hard possible different important single dollar dollars amount ' +
     'five six seven eight nine ten twenty hundred thousand million billion work works working guide matters matter keep safe move moves start small simple best good great help helps helped lesson'
   ).split(/\s+/));
 
@@ -33,8 +48,6 @@
   const ABBREV = ['e.g', 'i.e', 'etc', 'vs', 'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'inc', 'ltd', 'co', 'corp',
     'approx', 'no', 'fig', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec', 'u.s', 'u.k', 'a.m', 'p.m'];
 
-  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|they|he|she|which|because|however|still|yet|here|there)\b/i;
-  const CTA_RX = /\b(subscribe|sign up|signup|join|follow|download|read more|learn more|visit|register|grab|dm me|message me|link in bio|share this|comment below|reply|book a|check out|get started|start here)\b/i;
 
   // ---------- normalising ----------
   function normalise(text) {
@@ -118,17 +131,160 @@
       .filter(Boolean);
   }
 
+  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|its|it['’]s|they|their|them|he|she|his|her|which|because|however|still|yet|here|there|such|plus|otherwise|instead|meanwhile|again|even so|if so|if that|in that case|that['’]s|this['’]s)\b/i;
+  const CONTEXT_REF = /\b(?:the (?:opposite|former|latter|above|below|reverse|same thing)|as (?:mentioned|noted|i said|we said|discussed)|mentioned (?:above|earlier)|see (?:above|below)|(?:this|these|those) (?!week|weekend|year|month|day|days|morning|evening|time|season|summer|winter|spring|fall|quarter|decade|century)(?:\w+)|that (?:question|idea|point|reason|window|limit|number|rule|one|problem|fact|example|scarcity|habit|step|moment|process|list|key|phrase|word|answer|approach|way))\b/i;
+  const CTA_RX = /\b(subscribe|sign up|signup|join (?:me|us|our|the (?:list|newsletter|community))|follow (?:me|us|along|for)|download (?:the|my|our|it)|read more|learn more|visit (?:my|our|the (?:site|link|page))|register|grab (?:your|the|a copy)|dm me|message me|link in bio|share (?:this|it)|comment below|book a|check out|get started|start here)\b/i;
+  const CTA_NEGATED = /\b(?:never|don['’]?t|do not|not|no one should)\b[^.!?]{0,20}\b(?:share|post|join|follow|download|visit|send|subscribe)\b/i;
+  const CONCL_RX = /\b(bottom line|conclusion|takeaway|summary|final thoughts?|wrap(?:ping)?[- ]up|in short|tl;?dr|remember this|the point)\b/i;
+
+  // ---------- private notes / embedded instructions (untrusted, never published) ----------
+  const PRIVATE_LEAD = /^\s*[\[(<{]?\s*(?:from (?:your|the) source|private|internal(?: only)?|confidential|note to (?:self|me|editor)|notes? for (?:me|editor|the editor)|editor(?:['’]s)? note|editorial(?: note)?|draft note|production note|admin note|reminder to self|todo|to-?do|tk|fixme|do not (?:publish|post|share)|don['’]?t (?:publish|post|share)|not for (?:publication|publishing|posting|sharing))\b\s*(?:[:\-–—\]).!]|$)/i;
+  const INSTRUCTION_RXS = [
+    /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|the\s+|my\s+|your\s+)?(?:previous|prior|above|earlier|preceding|other|existing)?\s*(?:instructions?|rules|prompts?|directions|guidelines)\b/i,
+    /\b(?:system prompt|developer message|you are (?:an? )?(?:ai|assistant|language model|chatbot|bot|content engine)|as an ai\b)/i,
+    /^\s*(?:never|do not|don['’]?t)\s+(?:share|post|publish|include|repeat|show|copy|use|send|reveal)\s+(?:this|that|it|these|those)(?:\s+(?:part|line|section|note|bit|paragraph|anywhere|with anyone|publicly|online))?\s*[.!]*\s*$/i,
+    /\b(?:remove|delete|cut)\s+(?:this|that)\s+(?:line|part|section|note|paragraph)\b/i,
+    /\b(?:add|insert|check|verify|fix|double-check|update|confirm)\b[^.!?]*\bbefore (?:this goes (?:out|live)|posting|publishing|we post|i post)\b/i,
+    /\b(?:keep (?:this|it) (?:private|internal|confidential|secret|between us)|this is (?:private|internal|confidential)|off the record|for internal use)\b/i,
+    /\bnot for (?:publication|publishing|posting|sharing)\b/i,
+    /\b(?:post|publish|share) (?:this |it )?(?:on|to|across) (?:every|all) (?:platforms?|channels?|networks?)\b/i,
+    /\b(?:the )?(?:app|engine|generator|assistant|model)\s+(?:should|must|needs to|has to)\b/i,
+  ];
+  const BARE_DIRECTIVE = /^\s*(?:never|do not|don['’]?t)\s+(?:share|post|send|reveal|show)\s+(?:this|that|it)(?:\s+with anyone)?\s*[.!]*\s*$/i;
+  const SAFETY_NOUN = /\b(seed phrase|recovery phrase|private key|password|passcode|PIN)\b/i;
+  const INLINE_NOTE_RX = /\s*[\[(](?:note|notes|private|internal|editor(?:['’]s)? note|editorial|todo|tk|fixme|verify|check|insert|placeholder|add (?:link|image|photo|diagram|chart|source))\b[^\])]*[\])]/gi;
+  const SHOUT_LEAD = /^(?:NEVER|DO NOT|DON['’]T|ALWAYS|MUST|IMPORTANT|NOTE|WARNING|REMEMBER|REMINDER|ONLY|STOP|PLEASE)\b/;
+  const SAFETY_OBJECT = /\b(?:key|keys|phrase|password|passcode|seed|scam|scams|address|wallet|code|pin|account|parent|guardian|afford|lose|risk)\b/i;
+
+  function upperRatio(s) {
+    const letters = s.replace(/[^A-Za-z]/g, '');
+    if (!letters.length) return 0;
+    return letters.replace(/[^A-Z]/g, '').length / letters.length;
+  }
+
+  // true -> private/editorial/instruction text that must never be published
+  function isPrivateText(s) {
+    const t = collapse(s);
+    if (!t) return false;
+    if (PRIVATE_LEAD.test(t)) return true;
+    if (/^\s*(?:<!--|\/\/)/.test(t)) return true;
+    if (INSTRUCTION_RXS.some(rx => rx.test(t))) return true;
+    // ALL-CAPS instruction block ("IMPORTANT: DO NOT FORGET THE LINKS") with no audience-safety content
+    if (wordCount(t) >= 2 && upperRatio(t) > 0.7 && SHOUT_LEAD.test(t) && !SAFETY_OBJECT.test(t)) return true;
+    return false;
+  }
+
+  // ---------- sentence quality ----------
+  const MOVE_WORDS = /\b(up|down|rise|rises|rising|rose|fall|falls|falling|fell|drop|drops|dropped|climb|climbs|crash|crashes|move|moves|moved|moving|go|goes|going|went|swing|swings|higher|lower|increase|increases|decrease|decreases|grow|grows|shrink|shrinks|turn|turns|head|heads|run|runs|push|pushes|pull|pulls|spin|spins|walk|drive|travel|point|points|flow|flows|lean|leans)\b/i;
+  const PREDICTION_RX = /\b(?:will (?:definitely|certainly|surely|absolutely|100%|for sure)|(?:is|are) guaranteed to|can['’]?t (?:lose|fail|go down)|will (?:hit|reach|be worth|go to|soar|explode|double|triple|moon|skyrocket|replace|overtake))\b/i;
+  const HEDGE_RX = /\b(?:if|could|might|may|maybe|perhaps|possibly|some (?:people |experts |investors )?(?:think|believe|say|predict|hope|argue)|no one knows|nobody knows|predict|guess|in theory|it['’]?s possible)\b/i;
+  const SPEC_RX = /\b(?:if|could|might|may|would|maybe|perhaps|possibly|someday|one day|in the future|predict|predicts|expect|expects|believe|believes|no one knows|nobody knows)\b/i;
+  const OPINION_RX = /\b(?:i think|i believe|i feel|in my (?:view|opinion)|my take|we think|we believe|honestly|personally)\b/i;
+  const DANGLING_END = /\b(and|or|but|the|a|an|to|of|in|with|for|because|if|that|which|than|as|so|like|from|on|at|by|into|is|are|was|were)\s*[.!?]?$/i;
+
+  // Returns a list of reasons this sentence must not be published on its own.
+  function sentenceIssues(s) {
+    const t = collapse(s);
+    const issues = [];
+    if (!t) return ['empty'];
+    if (isPrivateText(t)) issues.push('private note or instruction');
+    if (/(?:…|\.\.\.)$/.test(t)) issues.push('cut off');
+    else if (/:$/.test(t)) issues.push('lead-in to a list, not a complete thought');
+    else if (!/[.!?]["'”’)\]]*$/.test(t)) issues.push('incomplete (no ending)');
+    if (/\b(and|or|but|the|a|an|of|with|because|if|which|than)\s*[.!?]?["'”’)]*$/i.test(t)) issues.push('incomplete (dangling end)');
+    const open = (t.match(/\(/g) || []).length, close = (t.match(/\)/g) || []).length;
+    const oq = (t.match(/“/g) || []).length, cq = (t.match(/”/g) || []).length;
+    const dq = (t.match(/"/g) || []).length;
+    if (open !== close || oq !== cq || dq % 2) issues.push('unbalanced brackets or quotes');
+    if (/^(?:and|or|but|in|on|of|to|with|for|from|the|a|an)\s/.test(t)) issues.push('starts mid-sentence');
+    // bad joins / contradictions
+    if (/\b(?:in|to|from)\s+the\s+(?:opposite|other|reverse)\s+(?:direction|way)\b/i.test(t)) {
+      const before = t.split(/\b(?:in|to|from)\s+the\s+(?:opposite|other|reverse)\s+(?:direction|way)\b/i)[0];
+      if (!MOVE_WORDS.test(before) || /\b(?:matter|matters|mean|means|count|counts|exist|exists|be|is|are)\s*$/i.test(before.trim())) issues.push('confusing or mangled (bad join)');
+    }
+    if (/\b(\w{3,})\s+\1\b/i.test(t) && !/\b(that that|had had|very very)\b/i.test(t)) issues.push('repeated word (bad join)');
+    const neg = t.match(/\b(?:won['’]t|will not|doesn['’]t|does not|can['’]t|cannot|isn['’]t|is not)\s+(\w+)/i);
+    if (neg) {
+      const pos = new RegExp('\\b(?:will|does|can|is)\\s+' + neg[1] + '\\b', 'i');
+      if (pos.test(t.replace(neg[0], ''))) issues.push('contradicts itself');
+    }
+    if (PREDICTION_RX.test(t) && !HEDGE_RX.test(t)) issues.push('unhedged prediction stated as fact');
+    return issues;
+  }
+
+  function needsContext(t, samePara) {
+    const s = collapse(t);
+    if (WEAK_START.test(s)) return true;
+    if (CONTEXT_REF.test(s) && !/^(?:in|at|by|on|for) (?:this|these) /i.test(s)) return true;
+    if (samePara && wordCount(s) < 5) return true; // short punchline ("Guard that window.")
+    return false;
+  }
+
+  function claimType(t) {
+    if (/\?["'”’)]*$/.test(collapse(t))) return 'question';
+    if (OPINION_RX.test(t)) return 'opinion';
+    if (SPEC_RX.test(t)) return 'speculation';
+    return 'fact';
+  }
+
+  // "NEVER SHARE YOUR SEED PHRASE." -> "Never share your seed phrase." (keeps known proper nouns/acronyms)
+  function calmCase(s, casing) {
+    const words = s.split(/(\s+)/);
+    const shouty = upperRatio(s) > 0.6 && wordCount(s) >= 3;
+    let first = true;
+    return words.map(w => {
+      if (/^\s+$/.test(w) || !/[A-Za-z]/.test(w)) return w;
+      const bare = w.replace(/[^A-Za-z'’]/g, '');
+      const isCaps = bare.length >= 2 && bare === bare.toUpperCase();
+      let out = w;
+      if (isCaps && (shouty || SHOUT_LEAD.test(bare) || /^(?:NOT|NEVER|ALWAYS|DON['’]T)$/.test(bare))) {
+        const low = bare.toLowerCase();
+        const known = casing[low];
+        const repl = known || (bare.length <= 4 && !SHOUT_LEAD.test(bare) && !/^(?:NOT|YOUR|YOU|THE|AND|FOR|WITH|ANY|ALL|THIS|THAT|IT|IS|ARE|OR|TO|OF|IN|ON|A|AN|BE|DO|NO|SO|IF|AT|BY|AS|UP|MY|WE|US|ME|HE|SHE|HIS|HER)$/.test(bare) ? bare : low);
+        out = w.replace(bare, repl);
+      }
+      if (first) { out = out.replace(/[A-Za-z]/, c => c.toUpperCase()); first = false; }
+      return out;
+    }).join('');
+  }
+
   // ---------- parse ----------
+  function keyOf(s) { return collapse(s).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+
   function parse(raw) {
     const text = normalise(raw);
-    const doc = { title: '', sections: [], sentences: [], listItems: [], questions: [], urls: [], ctaLines: [], wordCount: 0 };
+    const doc = { title: '', headings: [], sections: [], sentences: [], units: [], listItems: [], questions: [], urls: [], ctaLines: [], privateNotes: [], rewrites: [], rejected: [], wordCount: 0, sourceKey: '' };
     if (!text) return doc;
 
-    doc.urls = Array.from(new Set((text.match(/\bhttps?:\/\/[^\s)\]]+|\bwww\.[^\s)\]]+/gi) || []).map(u => u.replace(/[.,;:!?]+$/, ''))));
-    doc.wordCount = wordCount(text);
+    // 1) separate private notes / instructions from publishable lines
+    let lines = [];
+    text.split('\n').forEach(l0 => {
+      let l = l0.trim();
+      if (!l) { lines.push(''); return; }
+      const inline = l.match(INLINE_NOTE_RX);
+      if (inline) { inline.forEach(n => doc.privateNotes.push(collapse(n))); l = collapse(l.replace(INLINE_NOTE_RX, '')); }
+      if (!l) return;
+      const bare = isListItem(l) ? stripListMark(l) : l;
+      // A bare "NEVER share this." right after a line about a seed phrase / key / password is a real
+      // safety warning for the reader: rewrite it so it names what not to share. Otherwise it's private.
+      const prevLine = lines.length ? lines[lines.length - 1] : '';
+      const safety = BARE_DIRECTIVE.test(bare) && !PRIVATE_LEAD.test(bare) && prevLine && prevLine.match(SAFETY_NOUN);
+      if (safety) {
+        const verb = (bare.match(/\b(share|post|send|reveal|show)\b/i) || ['share'])[0].toLowerCase();
+        const rewritten = `Never ${verb} your ${safety[1].toLowerCase()} with anyone.`;
+        doc.rewrites.push({ from: bare, to: rewritten });
+        lines.push(rewritten);
+        return;
+      }
+      if (isPrivateText(bare)) { doc.privateNotes.push(bare); return; }
+      lines.push(l);
+    });
+    const publicText = lines.join('\n');
+    doc.urls = Array.from(new Set((publicText.match(/\bhttps?:\/\/[^\s)\]]+|\bwww\.[^\s)\]]+/gi) || []).map(u => u.replace(/[.,;:!?]+$/, ''))));
+    doc.wordCount = wordCount(publicText);
+    doc.sourceKey = ' ' + keyOf(publicText) + ' ';
 
-    let lines = text.split('\n').map(l => l.trim());
-    // Title: first non-empty line if it's short and isn't a sentence of a paragraph.
+    // 2) title
     let firstIdx = lines.findIndex(Boolean);
     const restHasContent = lines.slice(firstIdx + 1).some(Boolean);
     if (firstIdx > -1 && restHasContent && looksLikeHeading(lines[firstIdx], lines[firstIdx + 1])) {
@@ -139,6 +295,7 @@
     let current = { heading: '', sentences: [] };
     doc.sections.push(current);
     let para = [];
+    let paraId = 0;
     const seen = new Set();
     const titleKey = keyOf(doc.title);
     let order = 0;
@@ -146,19 +303,26 @@
     function addSentence(sec, sText, opts) {
       const s = collapse(sText);
       if (!s) return;
+      if (isPrivateText(s)) { doc.privateNotes.push(s); return; }
       const k = keyOf(s);
       if (!k || seen.has(k) || k === titleKey) return; // de-duplicate
       seen.add(k);
-      const item = { text: s, section: doc.sections.indexOf(sec), heading: sec.heading, order: order++, list: !!(opts && opts.list), firstInPara: !!(opts && opts.first) };
+      const item = { text: s, section: doc.sections.indexOf(sec), heading: sec.heading, order: order++, para: opts.para, list: !!opts.list, firstInPara: !!opts.first };
       sec.sentences.push(item);
       doc.sentences.push(item);
-      if (item.list) doc.listItems.push(item);
-      if (/\?$/.test(s)) doc.questions.push(item);
-      if (CTA_RX.test(s) && wordCount(s) <= 40) doc.ctaLines.push(item);
     }
     function flushPara() {
       if (!para.length) return;
-      splitSentences(para.join(' ')).forEach((s, i) => addSentence(current, s, { first: i === 0 }));
+      // A line break before a capitalised line is a sentence break (social posts often skip the period).
+      // A line break before a lowercase word is a hard wrap and joins the lines.
+      const joined = para.map((l, i) => {
+        const next = para[i + 1];
+        const unterminated = !/[.!?…:;,"”'’)\]—–-]$/.test(l);
+        if (unterminated && wordCount(l) >= 4 && !DANGLING_END.test(l) && (!next || /^["“‘(]?[A-Z0-9$]/.test(next))) return l + '.';
+        return l;
+      }).join(' ');
+      paraId++;
+      splitSentences(joined).forEach((s, i) => addSentence(current, s, { first: i === 0, para: paraId }));
       para = [];
     }
 
@@ -169,8 +333,10 @@
       if (!line) { flushPara(); continue; }
       if (isListItem(line) && !(prevBlank && looksLikeHeading(line, lines[i + 1]) && !isListItem(lines[i + 1] || ''))) {
         flushPara();
-        // a long list item may contain several sentences — keep it as one point
-        addSentence(current, stripListMark(line), { list: true });
+        paraId++;
+        let item = stripListMark(line);
+        if (!/[.!?]["'”’)]*$/.test(item) && wordCount(item) >= 3 && !DANGLING_END.test(item)) item += '.';
+        addSentence(current, item, { list: true, para: paraId });
         continue;
       }
       if (prevBlank && looksLikeHeading(line, lines[i + 1]) && nextLine && (lines[i + 1] === '' || !looksLikeHeading(lines[i + 1] || 'x. x.', ''))) {
@@ -178,19 +344,47 @@
         if (keyOf(stripHeadingMarks(line)) === titleKey) continue; // repeated title
         current = { heading: stripHeadingMarks(line), sentences: [] };
         doc.sections.push(current);
+        doc.headings.push(current.heading);
         continue;
       }
       para.push(line);
     }
     flushPara();
     doc.sections = doc.sections.filter(s => s.sentences.length || s.heading);
-    // re-index sections after filtering
     doc.sections.forEach((sec, idx) => sec.sentences.forEach(it => { it.section = idx; }));
+
+    // 3) calm SHOUTED safety lines, classify, quality-check
+    const casing = {};
+    doc.sentences.forEach(s => {
+      if (upperRatio(s.text) > 0.6) return;
+      (s.text.match(/[A-Za-z][A-Za-z'’]*/g) || []).forEach((w, i) => {
+        if (i === 0) return;
+        const low = w.toLowerCase();
+        if (w !== low) casing[low] = casing[low] || w;
+      });
+    });
+    doc.casing = casing;
+    doc.sentences.forEach((s, idx) => {
+      if (upperRatio(s.text) > 0.6 || /\b[A-Z]{3,}\b/.test(s.text.split(' ')[0] || '')) s.text = calmCase(s.text, casing);
+      const prev = doc.sentences[idx - 1];
+      const samePara = !!(prev && prev.para === s.para && !s.list);
+      s.issues = sentenceIssues(s.text);
+      s.bad = s.issues.length > 0;
+      s.needsContext = needsContext(s.text, samePara) || (samePara && doc.rewrites.some(r => r.to === s.text));
+      s.samePara = samePara;
+      s.claim = claimType(s.text);
+      s.question = /\?["'”’)]*$/.test(s.text);
+      s.cta = CTA_RX.test(s.text) && !CTA_NEGATED.test(s.text) && wordCount(s.text) <= 40;
+      if (s.bad) doc.rejected.push({ text: s.text, issues: s.issues });
+      if (!s.bad && s.list) doc.listItems.push(s);
+      if (!s.bad && s.question) doc.questions.push(s);
+      if (!s.bad && s.cta) doc.ctaLines.push(s);
+    });
+
     scoreSentences(doc);
+    buildUnits(doc);
     return doc;
   }
-
-  function keyOf(s) { return collapse(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 
   function contentWords(s) {
     return (s.toLowerCase().match(/[a-z][a-z0-9'’-]*[a-z0-9]|[a-z]/g) || [])
@@ -202,7 +396,8 @@
   function scoreSentences(doc) {
     const freq = {};
     const display = {};
-    const all = [doc.title].concat(doc.sections.map(s => s.heading)).concat(doc.sentences.map(s => s.text)).join(' ');
+    const good = doc.sentences.filter(s => !s.bad);
+    const all = [doc.title].concat(doc.headings).concat(good.map(s => s.text)).join(' ');
     (all.match(/[A-Za-z][A-Za-z0-9'’-]*[A-Za-z0-9]/g) || []).forEach(raw => {
       const w = raw.toLowerCase().replace(/['’]s$/, '');
       if (w.length <= 2 || STOP.has(w)) return;
@@ -211,112 +406,130 @@
       display[w] = display[w] || {};
       display[w][d] = (display[w][d] || 0) + 1;
     });
-    const titleWords = new Set(contentWords(doc.title + ' ' + doc.sections.map(s => s.heading).join(' ')));
-    const total = doc.sentences.length || 1;
+    const titleWords = new Set(contentWords(doc.title + ' ' + doc.headings.join(' ')));
     doc.sentences.forEach(item => {
       const words = contentWords(item.text);
       const n = wordCount(item.text);
       let score = 0;
       words.forEach(w => { score += Math.log(1 + (freq[w] || 0)) + (titleWords.has(w) ? 0.6 : 0); });
       score = words.length ? score / Math.sqrt(words.length + 2) : 0;
-      if (n < 6) score *= 0.45;
+      if (n < 6) score *= 0.6;
       else if (n > 42) score *= 0.6;
-      if (WEAK_START.test(item.text)) score *= 0.7;   // needs earlier context
-      if (/\?$/.test(item.text)) score *= 0.85;
+      if (item.question) score *= 0.85;
       if (item.firstInPara) score *= 1.12;
-      if (item.order === 0) score *= 1.05;
-      if (/:$/.test(item.text)) score *= 0.3;          // lead-in to a list
-      if (/\d/.test(item.text)) score *= 1.2;          // concrete facts/figures from the source
-      if (CTA_RX.test(item.text)) score *= 0.4;        // CTAs belong in the CTA card
+      if (/\d/.test(item.text)) score *= 1.15;        // concrete facts/figures from the source
+      if (item.cta) score *= 0.4;                      // CTAs belong in the CTA card
+      if (item.claim === 'speculation') score *= 0.8;  // facts first; predictions stay hedged
+      if (item.bad) score = 0;
       item.score = score;
-      item.rank = 0;
     });
-    doc.sentences.slice().sort((a, b) => b.score - a.score).forEach((s, i) => { s.rank = i; });
     doc.freq = freq;
     doc.keywords = Object.keys(freq)
       .filter(w => freq[w] >= 2 && w.length > 3)
       .sort((a, b) => freq[b] - freq[a] || (titleWords.has(b) - titleWords.has(a)))
       .slice(0, 12)
       .map(w => {
-        // keep the most common spelling (e.g. "Bitcoin" not "bitcoin")
         const forms = display[w];
         return Object.keys(forms).sort((a, b) => forms[b] - forms[a])[0];
       });
-    doc.total = total;
   }
 
-  // Best sentences across the article: covers every section before doubling up.
-  function keyPoints(doc, n, opts) {
-    opts = opts || {};
-    const maxWords = opts.maxWords || 40;
-    const exclude = new Set((opts.exclude || []).map(keyOf));
-    const pool = doc.sentences.filter(s => !exclude.has(keyOf(s.text)) && wordCount(s.text) >= 5 && wordCount(s.text) <= maxWords && !/:$/.test(s.text) && !CTA_RX.test(s.text));
+  // ---------- idea units: a standalone sentence + the sentences that lean on it ----------
+  function buildUnits(doc) {
+    const units = [];
+    let cur = null;
+    const close = () => { if (cur && cur.sents.length) units.push(cur); cur = null; };
+    doc.sentences.forEach(s => {
+      const startNew = !cur || s.list || !s.samePara || !s.needsContext || cur.sents.length >= 3 || cur.list;
+      if (startNew) {
+        close();
+        cur = { sents: [], broken: false, orphan: false, list: s.list };
+        if (s.needsContext && !s.list) cur.orphan = true; // leans on something we can't show with it
+      }
+      if (cur.broken) return;            // its anchor was rejected: drop it too
+      if (s.bad) { cur.broken = true; return; }
+      cur.sents.push(s);
+    });
+    close();
+    doc.units = units.map((u, i) => {
+      const text = u.sents.map(s => s.text).join(' ');
+      const spec = u.sents.some(s => s.claim === 'speculation');
+      const mean = u.sents.reduce((a, s) => a + s.score, 0) / u.sents.length;
+      let score = mean * (1 + 0.08 * (u.sents.length - 1));
+      if (u.orphan) score *= 0.3;
+      return {
+        id: i, text, sents: u.sents, keys: u.sents.map(s => keyOf(s.text)),
+        section: u.sents[0].section, order: u.sents[0].order, list: u.list, orphan: u.orphan,
+        cta: u.sents.some(s => s.cta), question: u.sents.length === 1 && u.sents[0].question,
+        spec, words: wordCount(text), chars: text.length, score
+      };
+    });
+  }
+
+  // ---------- selection helpers ----------
+  function isFree(u, used) { return u.keys.every(k => !used.has(k)); }
+  function mark(u, used) { (u.keys || [keyOf(u.text || u)]).forEach(k => used.add(k)); }
+  function speakable(text) { return !/https?:|www\.|[();]|\be\.g\.|\bi\.e\.|\d\.\d{3,}/.test(text); }
+
+  function introSection(doc) { return doc.sections.length > 1 && !doc.sections[0].heading ? 0 : -1; }
+  function conclusionSection(doc) {
+    for (let i = doc.sections.length - 1; i >= 0; i--) if (CONCL_RX.test(doc.sections[i].heading)) return i;
+    return doc.sections.length > 2 ? doc.sections.length - 1 : -1;
+  }
+
+  function usable(doc, used, o) {
+    o = o || {};
+    return doc.units.filter(u => !u.orphan && !u.cta && isFree(u, used) &&
+      (!o.maxWords || u.words <= o.maxWords) && (!o.maxChars || u.chars <= o.maxChars) &&
+      (!o.speakable || speakable(u.text)) && (!o.noQuestion || !u.question) && (!o.facts || !u.spec));
+  }
+
+  function hookUnit(doc, used, maxHeadChars) {
+    const intro = introSection(doc);
+    const early = usable(doc, used).filter(u => !u.list && (intro >= 0 ? u.section === intro : u.order < Math.max(6, doc.sentences.length * 0.35)));
+    const fits = early.filter(u => u.sents[0].text.length <= (maxHeadChars || 200) && !u.spec);
+    const q = fits.find(u => u.sents[0].question && (intro >= 0 || u.order < Math.max(3, doc.sentences.length * 0.35)));
+    if (q) return q;
+    const best = fits.slice().sort((a, b) => b.score - a.score)[0];
+    if (best) return best;
+    return usable(doc, used).filter(u => u.sents[0].text.length <= (maxHeadChars || 200) && !u.question).sort((a, b) => b.score - a.score)[0] || null;
+  }
+
+  function takeawayUnits(doc, used, n, o) {
+    o = o || {};
+    const c = conclusionSection(doc);
+    let pool = usable(doc, used, Object.assign({ noQuestion: true }, o)).filter(u => !u.spec && !u.list);
+    let list = c >= 0 ? pool.filter(u => u.section === c) : [];
+    if (!list.length) list = pool.filter(u => u.order >= doc.sentences.length * 0.7);
+    return list.sort((a, b) => b.score - a.score).slice(0, n || 1).sort((a, b) => a.order - b.order);
+  }
+
+  // Best unit per body section, spread across sections, returned in source order.
+  function bodyPoints(doc, used, n, o) {
+    o = o || {};
+    const intro = introSection(doc), concl = conclusionSection(doc);
+    const pool = usable(doc, used, o).filter(u => (doc.sections.length < 3 || (u.section !== intro && u.section !== concl)) && !u.question && (!o.prefer || true));
     const bySection = {};
-    pool.forEach(s => { (bySection[s.section] = bySection[s.section] || []).push(s); });
-    Object.values(bySection).forEach(list => list.sort((a, b) => b.score - a.score));
-    const sectionOrder = Object.keys(bySection).sort((a, b) => bySection[b][0].score - bySection[a][0].score);
-    const ranked = [];
-    for (let round = 0; round < 8; round++) {
-      let added = false;
-      for (const sec of sectionOrder) {
-        const cand = bySection[sec][round];
-        if (cand) { ranked.push(cand); added = true; }
-      }
-      if (!added) break;
-    }
-    // offset lets each platform lead with different points (less copy-paste across platforms)
-    const off = ranked.length > n ? (opts.offset || 0) % ranked.length : 0;
+    pool.forEach(u => { (bySection[u.section] = bySection[u.section] || []).push(u); });
+    const rank = u => u.score * (o.prefer ? o.prefer(u) : 1) * (u.spec ? 0.7 : 1);
+    Object.values(bySection).forEach(l => l.sort((a, b) => rank(b) - rank(a)));
+    const order = Object.keys(bySection).sort((a, b) => rank(bySection[b][0]) - rank(bySection[a][0]));
     const picked = [];
-    for (let i = 0; i < ranked.length && picked.length < n; i++) picked.push(ranked[(off + i) % ranked.length]);
-    return picked.sort((a, b) => a.order - b.order);
-  }
-
-  function hookOf(doc, maxLen) {
-    maxLen = maxLen || 200;
-    doc.hookParts = [];
-    const intro = doc.sections[0] && !doc.sections[0].heading && doc.sections.length > 1 ? doc.sections[0].sentences : [];
-    const early = (intro.length >= 2 ? intro : doc.sentences.filter(s => s.order < Math.max(8, doc.sentences.length * 0.3)));
-    const q = doc.questions.find(s => s.text.length <= maxLen && wordCount(s.text) >= 4 && s.order < Math.max(10, doc.sentences.length * 0.5));
-    if (q) return q.text;
-    const best = early.filter(s => s.text.length <= maxLen && wordCount(s.text) >= 6 && !WEAK_START.test(s.text))
-      .sort((a, b) => b.score - a.score)[0];
-    if (best) {
-      const next = doc.sentences.find(s => s.order === best.order + 1);
-      if (next && !next.firstInPara && !next.list && /^(but|and|so|yet)\b/i.test(next.text) && (best.text.length + next.text.length + 1) <= maxLen) {
-        doc.hookParts = [best.text, next.text];
-        return best.text + ' ' + next.text;
+    for (let round = 0; round < 6 && picked.length < n; round++) {
+      for (const sec of order) {
+        const cand = bySection[sec][round];
+        if (cand && picked.length < n && isFree(cand, used)) { picked.push(cand); mark(cand, used); }
       }
-      doc.hookParts = [best.text];
-      return best.text;
+      if (o.onePerSection && order.length >= 3) break;
     }
-    if (doc.title && doc.title.length <= maxLen) return doc.title;
-    const any = doc.sentences.slice().sort((a, b) => b.score - a.score)[0];
-    return any ? shorten(any.text, maxLen) : '';
-  }
-
-  function closingOf(doc, exclude) {
-    const ex = new Set((exclude || []).map(keyOf));
-    const lastSec = doc.sections[doc.sections.length - 1];
-    const tail = doc.sentences.filter(s => s.order >= doc.sentences.length * 0.7 && !ex.has(keyOf(s.text)) && wordCount(s.text) >= 5 && wordCount(s.text) <= 40 && !CTA_RX.test(s.text));
-    const fromLast = tail.filter(s => lastSec && s.section === doc.sections.indexOf(lastSec));
-    const list = (fromLast.length ? fromLast : tail).sort((a, b) => b.score - a.score);
-    return list[0] ? list[0].text : '';
-  }
-
-  // Cut at a natural clause boundary, else at a word boundary with "…".
-  function shorten(s, max) {
-    s = collapse(s);
-    if (s.length <= max) return s;
-    const slice = s.slice(0, max);
-    const clause = Math.max(slice.lastIndexOf('; '), slice.lastIndexOf(' — '), slice.lastIndexOf(' – '), slice.lastIndexOf(', '), slice.lastIndexOf(': '));
-    if (clause > max * 0.45) return slice.slice(0, clause).replace(/[,;:—–\s]+$/, '') + '…';
-    const sp = slice.lastIndexOf(' ');
-    return slice.slice(0, sp > 0 ? sp : max).replace(/[,;:—–\s]+$/, '') + '…';
+    return picked.sort((a, b) => a.order - b.order);
   }
 
   function hashtags(doc, n) {
     const tags = [];
-    (doc.keywords || []).forEach(k => {
+    const head = new Set(contentWords(doc.title + ' ' + doc.headings.join(' ')));
+    const kw = (doc.keywords || []).slice().sort((a, b) => (head.has(b.toLowerCase()) - head.has(a.toLowerCase())));
+    kw.forEach(k => {
       const clean = k.replace(/[^A-Za-z0-9]/g, '');
       if (clean.length < 4 || /^\d+$/.test(clean)) return;
       const tag = '#' + clean.charAt(0).toUpperCase() + clean.slice(1);
@@ -325,146 +538,297 @@
     return tags.slice(0, n);
   }
 
-  function topicLabel(doc) {
-    if (doc.title) return doc.title;
-    return (doc.keywords || [])[0] || '';
-  }
-
-  function sourceQuestion(doc, exclude) {
-    const ex = new Set((exclude || []).map(keyOf));
-    const q = doc.questions.filter(s => !ex.has(keyOf(s.text)) && s.text.length <= 180 && wordCount(s.text) >= 4);
-    // prefer a question near the end (often the reflective one)
+  function sourceQuestion(doc, used) {
+    const q = doc.questions.filter(s => !used.has(keyOf(s.text)) && s.text.length <= 180 && wordCount(s.text) >= 4 && !needsContextAlone(s));
     return q.length ? q[q.length - 1].text : '';
   }
+  function needsContextAlone(s) { return WEAK_START.test(s.text); }
 
-  function fitTo(lines, max) {
-    // Build text from lines, dropping trailing lines until it fits.
-    const out = lines.filter(l => l !== null && l !== undefined);
-    let text = out.join('\n\n').trim();
-    while (text.length > max && out.length > 1) {
-      out.pop();
-      text = out.join('\n\n').trim();
+  // Cut at a word boundary with "…" (only used for non-sentence labels; drafts never cut sentences).
+  function shorten(s, max) {
+    s = collapse(s);
+    if (s.length <= max) return s;
+    const slice = s.slice(0, max);
+    const sp = slice.lastIndexOf(' ');
+    return slice.slice(0, sp > 0 ? sp : max).replace(/[,;:—–\s]+$/, '') + '…';
+  }
+
+  // Join parts, dropping whole optional parts from the end until it fits. Never cuts a sentence.
+  function fitParts(parts, max, sep) {
+    sep = sep === undefined ? '\n\n' : sep;
+    const out = parts.filter(p => p && p.text);
+    const build = () => out.map(p => p.text).join(sep).trim();
+    let text = build();
+    while (text.length > max) {
+      let idx = -1;
+      for (let i = out.length - 1; i >= 0; i--) if (out[i].optional) { idx = i; break; }
+      if (idx < 0) break;
+      out.splice(idx, 1);
+      text = build();
     }
-    if (text.length > max) text = shorten(text, max);
     return text;
   }
 
   const LIMITS = {
     x: 280, linkedin: 3000, instagram: 2200, facebook: 2000, reels: 2200, substack: 1000, story: 1200, cta: 600
   };
+  const SOFT = { instagramFirstLine: 125, substack: 700, storySlide: 120 };
+
+  // Neutral template text the engine may add (no facts). Everything else must come from the source.
+  const TEMPLATE_RX = [
+    /^Key points:$/, /^What['’]s your take\?$/, /^What do you think\?$/, /^Let me know in the comments\.$/,
+    /^Save this for later\. ♾️$/, /^Questions about [^?]{1,60}\?$/, /^Drop them in the comments\.$/,
+    /^Questions\?$/, /^Want the full breakdown(?: of [^?]{1,120})?\?$/, /^Read it here: (?:\S+|\[ADD LINK\])$/, /^Read the full piece: \S+$/,
+    /^Link: \S+$/
+  ];
+  const LABEL_RX = /^(?:HOOK \(0–3s\):|ON-SCREEN TEXT:|SCRIPT:|CLOSE:|SLIDE \d+|Key points:)$/;
+  const RUNTIME_RX = /^≈ \d+s spoken at a normal pace \(rough estimate\)$/;
+  const PLACEHOLDER_RX = /\[(?:ADD|INSERT|YOUR|TBD|TODO|TK|LINK|URL|NAME|PLACEHOLDER)[^\]]*\]|\{\{[^}]*\}\}|\bTBD\b|\blorem ipsum\b/i;
+  const INTERNAL_RX = /\bFROM YOUR SOURCE\b|\bOPTIONS \(pick one|\bINTERNAL\b|\bDEBUG\b|\bNEEDS REVIEW\b|\bundefined\b|\bnull\b|\[object Object\]/;
 
   // ---------- platform drafts ----------
   function generate(kind, raw) {
     const doc = typeof raw === 'string' ? parse(raw) : raw;
-    if (!doc.sentences.length && !doc.title) return '';
-    const hookText = hookOf(doc, 200);
-    // "hook" in exclude lists stands for every source sentence used in the hook
-    const H = [hookText].concat(doc.hookParts || []);
-    const hook = hookText;
-    const pts = keyPoints(doc, 5, { exclude: H, maxWords: 38 });
-    const tags = hashtags(doc, 4);
+    if (!doc.units.length && !doc.title) return '';
+    const used = new Set();
     const title = doc.title;
+    const tags = hashtags(doc, 4);
+    const P = (text, optional) => ({ text, optional: !!optional });
+    // a proper noun the source itself capitalises mid-sentence (e.g. "Bitcoin"), else no topic
+    const topic = (doc.keywords || []).find(k => /^[A-Z]/.test((doc.casing || {})[k.toLowerCase()] || '')) || '';
 
     switch (kind) {
       case 'x': {
-        const lead = hook.length <= 200 ? hook : shorten(hook, 200);
-        const lines = [lead];
-        keyPoints(doc, 4, { exclude: H, maxWords: 30 }).forEach(p => lines.push(p.text));
-        let text = fitTo(lines, 280);
-        if (text === lead && title && title !== lead && (lead.length + title.length + 2) <= 280) text = `${title}\n\n${lead}`;
-        return text;
+        // one clear takeaway, ≤280: the article's main point + (if room) one hard fact
+        const parts = [];
+        const t = takeawayUnits(doc, used, 1, { maxChars: 230 })[0] || hookUnit(doc, used, 230);
+        if (t && t.chars <= 280) { parts.push(P(t.text)); mark(t, used); }
+        const fact = bodyPoints(doc, used, 1, { maxWords: 25, facts: true, prefer: u => (/\d/.test(u.text) ? 1.3 : 1) * (u.list ? 0.6 : 1) })[0];
+        if (fact) parts.push(P(fact.text, !!parts.length));
+        if (tags[0]) parts.push(P(tags.slice(0, 2).join(' '), true));
+        if (!parts.length && title) parts.push(P(title));
+        return fitParts(parts, LIMITS.x);
       }
       case 'linkedin': {
-        const opener = title || hook;
-        const context = title ? hook : (pts[0] ? pts[0].text : '');
-        const bullets = pts.filter(p => p.text !== context).slice(0, 4).map(p => `→ ${p.text}`);
-        const closing = closingOf(doc, H.concat([context]).concat(pts.map(p => p.text)));
-        const q = sourceQuestion(doc, H.concat([context]));
-        const parts = [opener];
-        if (context && context !== opener) parts.push(context);
-        if (bullets.length) parts.push(bullets.join('\n\n'));
-        if (closing) parts.push(closing);
-        parts.push(q || 'What’s your take?');
-        if (tags.length) parts.push(tags.slice(0, 3).join(' '));
-        return fitTo(parts, LIMITS.linkedin);
+        // professional: title, the main point up front, structured points, the practical close, a question
+        const ends = takeawayUnits(doc, used, 2);
+        let lead, end;
+        if (ends.length >= 2) { lead = ends[0]; end = ends[1]; }
+        else { lead = hookUnit(doc, used, 220); end = ends[0]; }
+        if (lead) mark(lead, used);
+        if (end) mark(end, used);
+        const pts = bodyPoints(doc, used, 4, { maxWords: 45, facts: true });
+        const q = sourceQuestion(doc, used);
+        const parts = [];
+        if (title) parts.push(P(title));
+        if (lead) parts.push(P(lead.text));
+        if (pts.length >= 2) parts.push(P('Key points:\n\n' + pts.map(p => `→ ${p.text}`).join('\n\n')));
+        else pts.forEach(p => parts.push(P(p.text)));
+        if (end) parts.push(P(end.text));
+        parts.push(P(q || 'What’s your take?'));
+        if (tags.length) parts.push(P(tags.slice(0, 3).join(' '), true));
+        return fitParts(parts, LIMITS.linkedin);
       }
       case 'instagram': {
-        const first = shorten(hook, 125); // what shows before "…more"
-        const body = keyPoints(doc, 3, { exclude: H, maxWords: 38, offset: 3 }).map(p => p.text);
-        const closing = closingOf(doc, H.concat(body));
-        const parts = [first];
-        if (first !== hook) parts.push(hook);
-        parts.push(...body);
-        if (closing) parts.push(closing);
-        parts.push('Save this for later. ♾️');
-        if (tags.length) parts.push(tags.join(' '));
-        return fitTo(parts, LIMITS.instagram);
+        const h = hookUnit(doc, used, SOFT.instagramFirstLine);
+        const parts = [];
+        if (h) {
+          parts.push(P(h.sents[0].text));
+          if (h.sents.length > 1) parts.push(P(h.sents.slice(1).map(s => s.text).join(' ')));
+          mark(h, used);
+        } else if (title && title.length <= SOFT.instagramFirstLine) parts.push(P(title));
+        // practical, save-worthy points: tips/list items first
+        const pts = bodyPoints(doc, used, 2, { maxWords: 30, prefer: u => (u.list ? 1.6 : 1) * (u.spec ? 0.5 : 1) });
+        pts.forEach(p => parts.push(P(`• ${p.text}`)));
+        const end = takeawayUnits(doc, used, 1)[0];
+        if (end) { parts.push(P(end.text)); mark(end, used); }
+        parts.push(P('Save this for later. ♾️', true));
+        if (tags.length) parts.push(P(tags.join(' '), true));
+        return fitParts(parts, LIMITS.instagram);
       }
       case 'facebook': {
-        const lead = title ? `${title}\n\n${hook}` : hook;
-        const fbPts = keyPoints(doc, 3, { exclude: H, maxWords: 38, offset: 5 }).map(p => p.text);
-        const body = fbPts.join(' ');
-        const closing = closingOf(doc, H.concat(fbPts));
-        const q = sourceQuestion(doc, H);
-        const parts = [lead, body];
-        if (closing) parts.push(closing);
-        parts.push(q || 'What do you think? Let me know in the comments.');
-        return fitTo(parts, LIMITS.facebook);
+        // conversational: open with the question, explain one idea in a short paragraph, land it, invite discussion
+        const h = hookUnit(doc, used, 220);
+        if (h) mark(h, used);
+        // the richest explanation: a multi-sentence unit from the body
+        const explain = bodyPoints(doc, used, 1, { maxWords: 70, facts: true, prefer: u => 1 + 0.35 * (u.sents.length - 1) - (u.list ? 0.5 : 0) });
+        if (explain[0]) {
+          const nxt = doc.units[explain[0].id + 1];
+          if (nxt && nxt.section === explain[0].section && !nxt.list && !nxt.orphan && !nxt.cta && !nxt.question && isFree(nxt, used) && explain[0].words + nxt.words <= 90) { explain.push(nxt); mark(nxt, used); }
+        }
+        const end = takeawayUnits(doc, used, 1)[0];
+        if (end) mark(end, used);
+        const q = sourceQuestion(doc, used);
+        const parts = [];
+        if (h) parts.push(P(h.text)); else if (title) parts.push(P(title));
+        if (explain.length) parts.push(P(explain.map(u => u.text).join(' ')));
+        if (end) parts.push(P(end.text));
+        parts.push(P(q || 'What do you think? Let me know in the comments.'));
+        return fitParts(parts, LIMITS.facebook);
       }
       case 'reels': {
-        const beats = keyPoints(doc, 4, { exclude: H, maxWords: 28, offset: 1 });
-        const closing = closingOf(doc, H.concat(beats.map(b => b.text)));
-        const lines = ['HOOK (0–3s):', hook, '', 'ON-SCREEN TEXT:', shorten(title || hook, 60), '', 'SCRIPT:'];
-        beats.forEach((b, i) => lines.push(`${i + 1}. ${b.text}`));
-        if (closing) { lines.push('', 'CLOSE:', closing); }
-        const spoken = [hook].concat(beats.map(b => b.text)).concat(closing ? [closing] : []).join(' ');
-        const secs = Math.round(wordCount(spoken) / 2.5); // ~150 spoken words per minute
+        // spoken script: hook → answer → 3 beats in order → close
+        const h = hookUnit(doc, used, 140);
+        const lines = [];
+        const spoken = [];
+        if (h) {
+          mark(h, used);
+          lines.push('HOOK (0–3s):', h.sents[0].text);
+          spoken.push(h.sents[0].text);
+        }
+        if (title && title.length <= 60) lines.push('', 'ON-SCREEN TEXT:', title);
+        lines.push('', 'SCRIPT:');
+        if (h && h.sents.length > 1) { const rest = h.sents.slice(1).map(s => s.text).join(' '); lines.push(rest); spoken.push(rest); }
+        const beats = bodyPoints(doc, used, 3, { maxWords: 32, speakable: true, onePerSection: true, prefer: u => (u.list ? 0.7 : 1) });
+        let close = takeawayUnits(doc, used, 1, { speakable: true, maxWords: 40 })[0];
+        if (close) mark(close, used);
+        else if (beats.length) close = beats.pop();          // land on the last beat instead of trailing off
+        else if (h && h.sents.length > 1 && lines[lines.length - 1] !== 'SCRIPT:') { lines.pop(); close = { text: spoken.pop() }; }
+        beats.forEach(b => { lines.push(b.text); spoken.push(b.text); });
+        if (lines[lines.length - 1] === 'SCRIPT:') { lines.pop(); if (lines[lines.length - 1] === '') lines.pop(); }
+        if (close) { lines.push('', 'CLOSE:', close.text); spoken.push(close.text); }
+        const secs = Math.round(wordCount(spoken.join(' ')) / 2.5); // ~150 spoken words per minute
         lines.push('', `≈ ${secs}s spoken at a normal pace (rough estimate)`);
         return lines.join('\n').trim();
       }
       case 'substack': {
-        const insights = keyPoints(doc, 2, { exclude: H, maxWords: 38, offset: 6 }).map(p => p.text);
-        const closing = closingOf(doc, H.concat(insights));
-        const parts = [hook].concat(insights);
-        if (closing) parts.push(closing);
-        return fitTo(parts, 700);
+        // stands alone: the main point, the single most useful supporting idea, the practical takeaway
+        const ends = takeawayUnits(doc, used, 2);
+        ends.forEach(u => mark(u, used));
+        const h = ends.length >= 2 ? null : hookUnit(doc, used, 220);
+        if (h) mark(h, used);
+        const insight = bodyPoints(doc, used, 1, { maxWords: 45, facts: true, prefer: u => 1 + 0.2 * (u.sents.length - 1) - (u.list ? 0.4 : 0) });
+        const parts = [];
+        if (ends.length >= 2) {
+          parts.push(P(ends[0].text));
+          insight.forEach(u => parts.push(P(u.text, true)));
+          parts.push(P(ends[1].text));
+        } else {
+          if (h) parts.push(P(h.text));
+          insight.forEach(u => parts.push(P(u.text, true)));
+          ends.forEach(u => parts.push(P(u.text)));
+        }
+        if (!parts.length && title) parts.push(P(title));
+        let text = fitParts(parts, SOFT.substack);
+        if (text.length > SOFT.substack) text = fitParts(parts, LIMITS.substack);
+        return text;
       }
       case 'story': {
+        // one idea, slide by slide, in source order; each slide a complete sentence
+        const units = [];
+        const h = hookUnit(doc, used, SOFT.storySlide);
+        const hookFits = h && h.sents.every(s => s.text.length <= SOFT.storySlide);
+        if (hookFits) mark(h, used);
+        const end = takeawayUnits(doc, used, 1, { maxChars: SOFT.storySlide })[0];
+        const room = Math.max(1, Math.min(3, 6 - (hookFits ? h.sents.length : 1) - (end ? 1 : 0)));
+        const pts = bodyPoints(doc, used, room, { maxChars: SOFT.storySlide, facts: true, onePerSection: true, prefer: u => (u.sents.length === 1 ? 1.2 : 1) });
+        if (end) mark(end, used);
+        if (hookFits) units.push(h);
+        units.push(...pts);
+        if (end) units.push(end);
+        units.sort((a, b) => a.order - b.order); // the story follows the source's own order
         const slides = [];
-        slides.push(shorten(title || hook, 80));
-        const sp = keyPoints(doc, 3, { exclude: H.concat([title]), maxWords: 30, offset: 2 });
-        sp.forEach(p => slides.push(shorten(p.text, 110)));
-        const closing = closingOf(doc, H.concat(sp.map(p => p.text)));
-        if (closing) slides.push(shorten(closing, 110));
-        const linkSlide = doc.urls[0] ? `Link: ${doc.urls[0]}` : '[Add link sticker to the full piece]';
-        slides.push(linkSlide);
+        if (!hookFits && title) slides.push(title);
+        units.forEach(u => { if (u === h) u.sents.forEach(x => slides.push(x.text)); else slides.push(u.text); });
+        if (doc.urls[0]) slides.push(`Link: ${doc.urls[0]}`);
         return slides.map((s, i) => `SLIDE ${i + 1}\n${s}`).join('\n\n');
       }
       case 'cta': {
+        // a real invitation from the source; links only if the source has one
         const lines = [];
-        if (doc.ctaLines.length) {
-          lines.push('FROM YOUR SOURCE:');
-          doc.ctaLines.slice(0, 3).forEach(c => lines.push(`• ${c.text}`));
-          lines.push('');
+        doc.ctaLines.slice(0, 2).forEach(c => lines.push(c.text));
+        const link = doc.urls[0];
+        if (lines.length) {
+          if (link) lines.push(`Read the full piece: ${link}`);
+          if (topic) lines.push(`Questions about ${topic}? Drop them in the comments.`);
+        } else {
+          lines.push(`Want the full breakdown${title ? ` of ${shorten(title, 90).replace(/…$/, '')}` : ''}? Read it here: ${link || '[ADD LINK]'}`);
+          lines.push(topic ? `Questions about ${topic}? Drop them in the comments.` : 'Questions? Drop them in the comments.');
         }
-                const link = doc.urls[0] || '[ADD LINK]';
-        lines.push('OPTIONS (pick one, edit freely):');
-        lines.push(title ? `• Read the full piece: ${shorten(title, 90)} → ${link}` : `• Read the full piece → ${link}`);
-        lines.push(`• If this helped, share it with someone who’s curious about ${(doc.keywords && doc.keywords[0]) || 'this'}.`);
-        lines.push('• Questions? Drop them in the comments.');
-        return lines.join('\n').trim();
+        return lines.join('\n\n').trim();
       }
       default:
-        return collapse(raw);
+        return '';
     }
+  }
+
+  // ---------- validation: READY only when every check passes ----------
+  function validate(kind, text, docOrRaw, opts) {
+    opts = opts || {};
+    const doc = typeof docOrRaw === 'string' ? parse(docOrRaw) : (docOrRaw || parse(''));
+    const t = String(text || '');
+    const issues = [];
+    const add = m => { if (!issues.includes(m)) issues.push(m); };
+    if (!t.trim()) return { ok: false, issues: ['Empty'] };
+    const limit = LIMITS[kind];
+    if (limit && t.length > limit) add(`Over the ${limit}-character limit`);
+    if (PLACEHOLDER_RX.test(t)) add('Unfilled placeholder (e.g. [ADD LINK]) — fill it in before posting');
+    if (INTERNAL_RX.test(t)) add('Contains internal processing text');
+
+    const titleKeys = new Set([keyOf(doc.title)].concat(doc.headings.map(keyOf)).filter(Boolean));
+    const privKeys = doc.privateNotes.map(keyOf).filter(k => k.split(' ').length >= 3);
+    const tKey = ' ' + keyOf(t) + ' ';
+    if (privKeys.some(k => tKey.includes(' ' + k + ' '))) add('Contains a private note or instruction from the source');
+
+    const seen = new Set();
+    const lines = t.split('\n').map(l => l.trim()).filter(Boolean);
+    let contentSentences = 0;
+    lines.forEach((line, li) => {
+      if (LABEL_RX.test(line) || RUNTIME_RX.test(line)) return;
+      if (/^(?:#[A-Za-z0-9_]+\s*)+$/.test(line)) {
+        if (!opts.edited) line.match(/#[A-Za-z0-9_]+/g).forEach(tag => { if (!doc.sourceKey.includes(' ' + tag.slice(1).toLowerCase())) add(`Hashtag not from source: ${tag}`); });
+        return;
+      }
+      const body = line.replace(/^(?:→|•|-|\d+\.)\s*/, '');
+      if (titleKeys.has(keyOf(body))) return; // the source's own title/heading
+      if (isPrivateText(body)) add('Contains a private note or instruction from the source');
+      splitSentences(body).forEach(s => {
+        if (TEMPLATE_RX.some(rx => rx.test(s))) return;
+        contentSentences++;
+        const k = keyOf(s);
+        if (k.split(' ').length > 3) { if (seen.has(k)) add('Repeats a sentence'); seen.add(k); }
+        sentenceIssues(s).forEach(reason => add(`Unclear sentence (${reason}): “${shorten(s, 70)}”`));
+        if (!opts.edited) {
+          if (!doc.sourceKey.includes(' ' + k + ' ')) add(`Not found in source: “${shorten(s, 70)}”`);
+          (s.match(/\d[\d,.]*\d|\d/g) || []).forEach(n => { if (!doc.sourceKey.includes(keyOf(n))) add(`Number not in source: ${n}`); });
+        }
+      });
+    });
+    if (!contentSentences && kind !== 'cta') add('No content from the source');
+
+    // platform suitability
+    const first = lines[0] || '';
+    if (kind === 'instagram' && first.length > SOFT.instagramFirstLine) add(`First line is over ${SOFT.instagramFirstLine} characters (cut off before “more”)`);
+    if (kind === 'reels') {
+      if (!/^HOOK \(0–3s\):$/m.test(t) && !opts.edited) add('Script has no hook');
+      if (!/^CLOSE:$/m.test(t) && !opts.edited) add('Script has no closing line');
+      lines.filter(l => !LABEL_RX.test(l) && !RUNTIME_RX.test(l)).forEach(l => {
+        if (!speakable(l)) add('Script has text that is hard to say aloud (links, brackets, long decimals)');
+        if (wordCount(l) > 45) add('A script line is too long to say in one breath');
+      });
+    }
+    if (kind === 'story') {
+      const slides = t.split(/^SLIDE \d+$/m).map(s => s.trim()).filter(Boolean);
+      if (slides.length < 2) add('Story needs at least 2 slides');
+      if (slides.some(s => s.length > SOFT.storySlide && !/^Link: /.test(s))) add(`A slide is over ${SOFT.storySlide} characters`);
+      if (!opts.edited) {
+        const orders = slides.map(s => { const hit = doc.sentences.find(x => keyOf(s).startsWith(keyOf(x.text))); return hit ? hit.order : null; }).filter(o => o !== null);
+        if (orders.some((o, i) => i && o < orders[i - 1])) add('Slides are out of order');
+      }
+    }
+    if (kind === 'substack' && contentSentences < 2) add('Too thin to stand alone (needs at least 2 sentences)');
+    if (kind === 'cta' && !/\b(share|subscribe|follow|join|read|ask|comment|drop|sign up|download|visit|reply|try|book|learn)\b/i.test(t)) add('No clear call to action');
+    if (/(?:…|\.\.\.)\s*$/m.test(t)) add('Has a cut-off line');
+    return { ok: issues.length === 0, issues };
   }
 
   function generateAll(raw, kinds) {
     const doc = parse(raw);
-    const out = {};
-    kinds.forEach(k => { out[k] = generate(k, doc); });
-    return { doc, outputs: out };
+    const outputs = {};
+    const checks = {};
+    kinds.forEach(k => { outputs[k] = generate(k, doc); checks[k] = validate(k, outputs[k], doc); });
+    return { doc, outputs, checks };
   }
 
-  return { parse, splitSentences, generate, generateAll, shorten, LIMITS, keyOf };
+  return { parse, splitSentences, generate, generateAll, validate, sentenceIssues, isPrivateText, shorten, LIMITS, keyOf };
 });

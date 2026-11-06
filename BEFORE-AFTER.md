@@ -1,5 +1,7 @@
 # iNFiN8 Content Engine — Before / After
 
+> **Superseded:** the AFTER drafts below are from preview commit `588486d`. The quality-control fix changed the engine — see **QC-REPORT.md** for current drafts and test results.
+
 BEFORE = live engine at checkpoint `b2b6b6e` (main, unchanged).  
 AFTER = preview engine on branch `content-engine-preview`.  
 Generated 11/6/2026, 1:34:56 PM (CT).
