@@ -265,7 +265,7 @@ function renderOutputs(text, useSavedOutputs = false) {
   const secCount = doc.sections.filter(s => s.sentences.length).length;
   const skipped = [];
   if (doc.privateNotes.length) skipped.push(`${doc.privateNotes.length} private note${doc.privateNotes.length > 1 ? 's' : ''}/instruction${doc.privateNotes.length > 1 ? 's' : ''}`);
-  if (doc.rejected.length) skipped.push(`${doc.rejected.length} unclear or unsupported sentence${doc.rejected.length > 1 ? 's' : ''}`);
+  if (doc.rejected.length) skipped.push(`${doc.rejected.length} fragment${doc.rejected.length > 1 ? 's' : ''} or unclear line${doc.rejected.length > 1 ? 's' : ''}`);
   sourceUsed.textContent = doc.sentences.length
     ? `Drafts pulled from ${doc.sentences.length} sentences${secCount > 1 ? ` across ${secCount} sections` : ''}${doc.title ? ` · Title: “${doc.title}”` : ''}.${skipped.length ? ` Left out: ${skipped.join(' and ')}.` : ''} Facts and sentences come only from your source — review before posting.`
     : '';

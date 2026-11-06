@@ -15,7 +15,7 @@ test('sentence splitting keeps decimals, money, abbreviations and URLs intact', 
 });
 
 // ---------- general draft rules, every sample ----------
-for (const f of ['bitcoin-adolescent-standin.txt', 'bitcoin-standin.txt', 'numbered.txt', 'dupes.txt', 'short.txt']) {
+for (const f of ['bitcoin-explained-to-an-adolescent-ORIGINAL.txt', 'bitcoin-adolescent-standin.txt', 'bitcoin-standin.txt', 'numbered.txt', 'dupes.txt', 'short.txt']) {
   test(`${f}: all 8 drafts non-empty, within limits, no boilerplate, no repeats, no invented numbers/hashtags`, () => {
     const src = read(f);
     const { outputs } = E.generateAll(src, kinds);
@@ -145,6 +145,42 @@ test('dependent sentences ("This is why…", "It is…") only appear right after
     const out = adol.outputs[k];
     if (/This is why some people call Bitcoin/.test(out)) assert.ok(/print more cash\. This is why/.test(out), `${k}: orphaned "This is why"`);
     if (/Bitcoin is one answer to that question/.test(out)) assert.ok(/internet\?\s+(?:SLIDE 2\s+)?Bitcoin is one answer/.test(out.replace(/ON-SCREEN TEXT:\n.*\n/, '').replace(/HOOK \(0–3s\):\n/, '').replace(/\n+/g, ' ').replace(/SCRIPT: /, '')), `${k}: orphaned answer`);
+  });
+});
+
+
+// ---------- DJ's ORIGINAL article (exact text, md5 04e34eeab6b479cd7dfd6958ad74b90c) ----------
+const ORIG = read('bitcoin-explained-to-an-adolescent-ORIGINAL.txt');
+const orig = E.generateAll(ORIG, kinds);
+test('ORIGINAL: sections = the 23 numbered parts + the 30-second version (short lines are not headings)', () => {
+  const heads = orig.doc.sections.map(s => s.heading).filter(Boolean);
+  assert.ok(heads.includes('Start here: what even is Bitcoin?') && heads.includes('Five Bitcoin rules I’d want her to remember'));
+  assert.ok(heads.some(h => /30-SECOND VERSION/.test(h)));
+  ['Private key', 'Photo?', '⸻', 'Then', 'Blockchain', 'Nodes'].forEach(h => assert.ok(!heads.includes(h), `"${h}" should not be a heading`));
+});
+test('ORIGINAL: the "opposite direction" sentence AND its parallel half are left out of every card', () => {
+  kinds.forEach(k => assert.ok(!/today[’']s price won[’']t matter/i.test(orig.outputs[k]), k));
+});
+test('ORIGINAL: "NEVER share this." is never shown bare; private key warning kept as safety advice', () => {
+  kinds.forEach(k => assert.ok(!/NEVER share this|FROM YOUR SOURCE/i.test(orig.outputs[k]), k));
+  assert.ok(orig.doc.rewrites.some(r => r.to === 'Never share your private key with anyone.'));
+});
+test('ORIGINAL: Story slides follow source order and one idea (question → the 30-second answer)', () => {
+  const slides = orig.outputs.story.split(/^SLIDE \d+$/m).map(s => s.trim()).filter(Boolean);
+  const order = slides.map(s => orig.doc.sentences.filter(x => E.keyOf(s) === E.keyOf(x.text))[0].order);
+  order.forEach((o, i) => i && assert.ok(o > order[i - 1], 'out of order'));
+  assert.ok(/\?$/.test(slides[0]) && slides.length >= 4 && slides.length <= 6);
+  assert.ok(orig.checks.story.ok, orig.checks.story.issues.join(' | '));
+});
+test('ORIGINAL: 7 cards READY; CTA NEEDS REVIEW only because the article has no link/CTA ([ADD LINK])', () => {
+  kinds.filter(k => k !== 'cta').forEach(k => assert.ok(orig.checks[k].ok, `${k}: ${orig.checks[k].issues.join(' | ')}`));
+  assert.ok(!orig.checks.cta.ok && orig.checks.cta.issues.length === 1 && /placeholder/.test(orig.checks.cta.issues[0]));
+});
+test('ORIGINAL: no arrow diagrams, bare analogies, list fragments or quoted dialogue used as standalone points', () => {
+  kinds.forEach(k => {
+    const out = orig.outputs[k];
+    assert.ok(!/[→≠]\s*Them|You → |^Imagine Bitcoin like a digital vault\.$|^(?:• )?(?:text it|scams|price crashes)$/m.test(out.replace(/^→ /gm, '')), k);
+    assert.ok(!/what the hell/i.test(out), k);
   });
 });
 

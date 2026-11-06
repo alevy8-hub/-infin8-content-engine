@@ -1,6 +1,6 @@
 # iNFiN8 Content Engine — Quality-Control Fix Report
 
-Branch: `content-engine-preview` (live `main` untouched). Generated 11/6/2026, 2:12:07 PM CT.
+Branch: `content-engine-preview` (live `main` untouched). Generated 11/6/2026, 2:38:23 PM CT.
 Same app, same eight cards, same black-and-gold UI, same COPY / EDIT / EXPORT, CLEAR ALL, REPLACE CONTENT, Undo, counters, local saving. Only the drafting engine and the status logic changed. Still static, browser-only, no AI, no network calls.
 
 ## What was fixed
@@ -55,12 +55,13 @@ Eight cards, branding, layout, counters, COPY / EDIT / EXPORT, CLEAR ALL / REPLA
 - The safety rewrite only covers “never share this” after a seed phrase / recovery phrase / private key / password / passcode / PIN line.
 - “Sounds natural when spoken” was checked by rules and by reading the script, not by a listening test.
 
-## Test runs (actual output, 11/6/2026, 2:12:07 PM CT)
+## Test runs (actual output, 11/6/2026, 2:38:23 PM CT)
 
 ### Node engine tests — `node tests/engine.test.js`
 
 ```text
 ✓ sentence splitting keeps decimals, money, abbreviations and URLs intact
+  ✓ bitcoin-explained-to-an-adolescent-ORIGINAL.txt: all 8 drafts non-empty, within limits, no boilerplate, no repeats, no invented numbers/hashtags
   ✓ bitcoin-adolescent-standin.txt: all 8 drafts non-empty, within limits, no boilerplate, no repeats, no invented numbers/hashtags
   ✓ bitcoin-standin.txt: all 8 drafts non-empty, within limits, no boilerplate, no repeats, no invented numbers/hashtags
   ✓ numbered.txt: all 8 drafts non-empty, within limits, no boilerplate, no repeats, no invented numbers/hashtags
@@ -75,10 +76,16 @@ Eight cards, branding, layout, counters, COPY / EDIT / EXPORT, CLEAR ALL / REPLA
   ✓ 7. READY means validated: Bitcoin regression all READY; weak drafts NEEDS REVIEW
   ✓ platform shape: X one takeaway ≤280, Instagram hook line ≤125, LinkedIn points + question
   ✓ dependent sentences ("This is why…", "It is…") only appear right after the sentence they lean on
+  ✓ ORIGINAL: sections = the 23 numbered parts + the 30-second version (short lines are not headings)
+  ✓ ORIGINAL: the "opposite direction" sentence AND its parallel half are left out of every card
+  ✓ ORIGINAL: "NEVER share this." is never shown bare; private key warning kept as safety advice
+  ✓ ORIGINAL: Story slides follow source order and one idea (question → the 30-second answer)
+  ✓ ORIGINAL: 7 cards READY; CTA NEEDS REVIEW only because the article has no link/CTA ([ADD LINK])
+  ✓ ORIGINAL: no arrow diagrams, bare analogies, list fragments or quoted dialogue used as standalone points
   ✓ numbered title is parsed without the "1."
   ✓ empty source → empty drafts, no crash; validate says EMPTY
   ✓ source that is only private notes produces nothing publishable
-engine tests passed (18)
+engine tests passed (25)
 ```
 
 ### Headless Chrome UI check (local copy of this branch)
@@ -89,7 +96,7 @@ PASS all 8 Bitcoin drafts READY (validated) — x:READY linkedin:READY instagram
 PASS bad "opposite direction" sentence in no card
 PASS no private note in any card
 PASS character counters shown — 197 / 280 characters
-PASS source line reports what was left out — Drafts pulled from 31 sentences across 8 sections · Title: “Bitcoin Explained To An Adolescent”. Left out: 5 private notes/instructions and 2 unclear or unsupported sentences. Facts and sentences come only from your source — review before posting.
+PASS source line reports what was left out — Drafts pulled from 31 sentences across 8 sections · Title: “Bitcoin Explained To An Adolescent”. Left out: 5 private notes/instructions and 2 fragments or unclear lines. Facts and sentences come only from your source — review before posting.
 PASS COPY puts the X draft on the clipboard — COPIED
 PASS EXPORT downloads infin8-cta.txt with the CTA text — If this helped, share it with a friend who is curious about 
 PASS EDIT focuses the draft; typed edit shows EDITED — EDITED
@@ -270,14 +277,14 @@ Save this for later. ♾️
 #Bitcoin #Money #Seed #Phrase
 ```
 
-**AFTER (this fix, 493 chars / limit 2200)**
+**AFTER (this fix, 450 chars / limit 2200)**
 
 ```text
 Have you ever wondered how money could exist only on the internet?
 
 Bitcoin is one answer to that question. It is digital money that no single bank, company, or government controls.
 
-• Think of Bitcoin like coins in a video game, except no game company runs the game.
+• You do not have to buy a whole bitcoin.
 
 • Never share your seed phrase or password with anyone, even a friend.
 
@@ -339,7 +346,7 @@ Bitcoin is a new kind of money that runs on math, computers, and shared rules in
 ≈ 38s spoken at a normal pace (rough estimate)
 ```
 
-**AFTER (this fix, 700 chars / limit 2200)**
+**AFTER (this fix, 769 chars / limit 2200)**
 
 ```text
 HOOK (0–3s):
@@ -350,14 +357,14 @@ Bitcoin Explained To An Adolescent
 
 SCRIPT:
 Bitcoin is one answer to that question. It is digital money that no single bank, company, or government controls.
-Think of Bitcoin like coins in a video game, except no game company runs the game.
+Bitcoin runs on thousands of computers around the world that all follow the same rules. It launched in January 2009, and anyone with an internet connection can use it.
 Every Bitcoin payment is written into a shared record called the blockchain.
-Your wallet comes with a seed phrase, a list of 12 or 24 words that can unlock your money. Never share your seed phrase with anyone.
+One bitcoin can be split into 100 million pieces called satoshis. That means you can learn with a very small amount.
 
 CLOSE:
 Bitcoin is a new kind of money that runs on math, computers, and shared rules instead of a bank.
 
-≈ 42s spoken at a normal pace (rough estimate)
+≈ 45s spoken at a normal pace (rough estimate)
 ```
 
 ### Substack Note — READY
@@ -374,12 +381,12 @@ One bitcoin can be split into 100 million pieces called satoshis.
 Bitcoin is a new kind of money that runs on math, computers, and shared rules instead of a bank.
 ```
 
-**AFTER (this fix, 394 chars / limit 1000)**
+**AFTER (this fix, 275 chars / limit 1000)**
 
 ```text
 Bitcoin is a new kind of money that runs on math, computers, and shared rules instead of a bank.
 
-Only 21 million bitcoin will ever exist. That limit is written into the software, so nobody can print more the way a government can print more cash. This is why some people call Bitcoin "digital gold."
+Think of Bitcoin like coins in a video game, except no game company runs the game.
 
 The smartest first step is to understand how it works before you spend a single dollar on it.
 ```
@@ -408,7 +415,7 @@ SLIDE 6
 [Add link sticker to the full piece]
 ```
 
-**AFTER (this fix, 490 chars / limit 1200)**
+**AFTER (this fix, 486 chars / limit 1200)**
 
 ```text
 SLIDE 1
@@ -421,10 +428,10 @@ SLIDE 3
 It is digital money that no single bank, company, or government controls.
 
 SLIDE 4
-Think of Bitcoin like coins in a video game, except no game company runs the game.
+You can picture the blockchain as a giant notebook that everyone can read but nobody can erase.
 
 SLIDE 5
-Every Bitcoin payment is written into a shared record called the blockchain.
+Write your seed phrase on paper and keep it somewhere safe.
 
 SLIDE 6
 Bitcoin is a new kind of money that runs on math, computers, and shared rules instead of a bank.

@@ -131,11 +131,13 @@
       .filter(Boolean);
   }
 
-  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|its|it['’]s|they|their|them|he|she|his|her|which|because|however|still|yet|here|there|such|plus|otherwise|instead|meanwhile|again|even so|if so|if that|in that case|that['’]s|this['’]s)\b/i;
-  const CONTEXT_REF = /\b(?:the (?:opposite|former|latter|above|below|reverse|same thing)|as (?:mentioned|noted|i said|we said|discussed)|mentioned (?:above|earlier)|see (?:above|below)|(?:this|these|those) (?!week|weekend|year|month|day|days|morning|evening|time|season|summer|winter|spring|fall|quarter|decade|century)(?:\w+)|that (?:question|idea|point|reason|window|limit|number|rule|one|problem|fact|example|scarcity|habit|step|moment|process|list|key|phrase|word|answer|approach|way))\b/i;
+  const WEAK_START = /^(and|but|so|or|also|then|this|that|these|those|it|its|it['’]s|they|their|them|he|she|his|her|which|because|however|still|yet|here|there|such|plus|otherwise|instead|meanwhile|again|even so|if so|if that|in that case|that['’]s|this['’]s|in exchange|in return|as a result|for example|for instance|in fact|on top of that|after that|because of this|that way|by contrast|in contrast|likewise|similarly|now)\b/i;
+  const CONTEXT_REF = /\b(?:the (?:opposite|former|latter|above|below|reverse|same thing)|as (?:mentioned|noted|i said|we said|discussed)|mentioned (?:above|earlier)|see (?:above|below)|(?:this|these|those) (?!week|weekend|year|month|day|days|morning|evening|time|season|summer|winter|spring|fall|quarter|decade|century)(?:\w+)|that (?:question|idea|point|reason|window|limit|number|rule|one|problem|fact|example|scarcity|habit|step|moment|process|list|key|phrase|word|answer|approach|way|experiment|story|part|concept|lesson|distinction|difference|database|vision|outcome|thing|idea))\b/i;
   const CTA_RX = /\b(subscribe|sign up|signup|join (?:me|us|our|the (?:list|newsletter|community))|follow (?:me|us|along|for)|download (?:the|my|our|it)|read more|learn more|visit (?:my|our|the (?:site|link|page))|register|grab (?:your|the|a copy)|dm me|message me|link in bio|share (?:this|it)|comment below|book a|check out|get started|start here)\b/i;
   const CTA_NEGATED = /\b(?:never|don['’]?t|do not|not|no one should)\b[^.!?]{0,20}\b(?:share|post|join|follow|download|visit|send|subscribe)\b/i;
-  const CONCL_RX = /\b(bottom line|conclusion|takeaway|summary|final thoughts?|wrap(?:ping)?[- ]up|in short|tl;?dr|remember this|the point)\b/i;
+  const POINTER_LEAD = /^(?:here['’]s (?:the answer|why|how|what|the thing)|it['’]s this|this is it|the (?:basic |real |big |main )?(?:idea|question|answer|point|lesson|thing) (?:is|was)|so ask|it means|which means|in other words|it['’]s basically asking)\s*:$/i;
+  const TEASER_RX = /\b(?:one|a|the) (?:massive|big|huge|key|major|important|crucial|simple) (?:difference|catch|twist|problem|secret|reason)\s*[.!]?$|\bthe following\b|^here['’]s (?:how|why|what)\b[^:]*$|\bhere['’]s the (?:clever|important|key|best) part\b/i;
+  const CONCL_RX = /\b(bottom line|conclusion|takeaway|summary|final thoughts?|wrap(?:ping)?[- ]up|in short|tl;?dr|remember this|the point|\d+-second version|short version|in a nutshell)\b/i;
 
   // ---------- private notes / embedded instructions (untrusted, never published) ----------
   const PRIVATE_LEAD = /^\s*[\[(<{]?\s*(?:from (?:your|the) source|private|internal(?: only)?|confidential|note to (?:self|me|editor)|notes? for (?:me|editor|the editor)|editor(?:['’]s)? note|editorial(?: note)?|draft note|production note|admin note|reminder to self|todo|to-?do|tk|fixme|do not (?:publish|post|share)|don['’]?t (?:publish|post|share)|not for (?:publication|publishing|posting|sharing))\b\s*(?:[:\-–—\]).!]|$)/i;
@@ -197,6 +199,7 @@
     const dq = (t.match(/"/g) || []).length;
     if (open !== close || oq !== cq || dq % 2) issues.push('unbalanced brackets or quotes');
     if (/^(?:and|or|but|in|on|of|to|with|for|from|the|a|an)\s/.test(t)) issues.push('starts mid-sentence');
+    if (/[→←⇒≠]/.test(t)) issues.push('diagram/notation, not a sentence');
     // bad joins / contradictions
     if (/\b(?:in|to|from)\s+the\s+(?:opposite|other|reverse)\s+(?:direction|way)\b/i.test(t)) {
       const before = t.split(/\b(?:in|to|from)\s+the\s+(?:opposite|other|reverse)\s+(?:direction|way)\b/i)[0];
@@ -213,9 +216,12 @@
   }
 
   function needsContext(t, samePara) {
-    const s = collapse(t);
+    let s = collapse(t);
+    const lead = s.match(/^([^:]{1,40}):\s+(.+)$/);           // "It's this: Your generation…" points forward, not back
+    if (lead && wordCount(lead[1]) <= 6 && /^(?:it['’]s|this is|that['’]s|here['’]s|the (?:basic |real |big )?(?:idea|question|answer|point|lesson) (?:is|was))/i.test(lead[1])) s = lead[2];
     if (WEAK_START.test(s)) return true;
     if (CONTEXT_REF.test(s) && !/^(?:in|at|by|on|for) (?:this|these) /i.test(s)) return true;
+    if (/\b(?:it|that|this|them|those|these)\s*[.!?]["'”’)]*$/i.test(s) && wordCount(s) < 12) return true; // "Copy it." / "Don't teach her that."
     if (samePara && wordCount(s) < 5) return true; // short punchline ("Guard that window.")
     return false;
   }
@@ -256,9 +262,36 @@
     const doc = { title: '', headings: [], sections: [], sentences: [], units: [], listItems: [], questions: [], urls: [], ctaLines: [], privateNotes: [], rewrites: [], rejected: [], wordCount: 0, sourceKey: '' };
     if (!text) return doc;
 
+    // 0) keep the author's own pairings together:
+    //    a short lead-in ending in ":" + the single line it introduces ("It's this:" + "Bitcoin uses energy…"),
+    //    and a numbered rule + the line directly under it ("4. Your seed phrase…" + "Never share it. Ever.")
+    // separator / emoji-only lines ("⸻", "---", "😂") are just breaks
+    const raw0 = text.split('\n').map(l => l.trim()).map(l => (/^[^\p{L}\p{N}]*$/u.test(l) ? '' : l));
+    const merged = [];
+    const joinedLines = new Set();
+    const setupLines = new Set(); // lines that set up an answer given after "It's this:" — never end a draft on them
+    for (let i = 0; i < raw0.length; i++) {
+      let l = raw0[i];
+      if (!l) { merged.push(''); continue; }
+      // pure pointer lead-ins ("Here's the answer:", "It's this:") add nothing once the next line stands alone
+      if (POINTER_LEAD.test(l)) {
+        for (let k = merged.length - 1; k >= 0; k--) if (merged[k]) { setupLines.add(keyOf(merged[k])); break; }
+        merged.push(''); continue;
+      }
+      if (/:$/.test(l) && wordCount(l) <= 15 && !isListItem(l)) {
+        let j = i + 1; while (j < raw0.length && !raw0[j]) j++;
+        const nxt = raw0[j], after = raw0[j + 1];
+        if (nxt && !isListItem(nxt) && !/:$/.test(nxt) && !after) { merged.push(l + ' ' + nxt); joinedLines.add(l + ' ' + nxt); i = j; continue; }
+      }
+      if (/^\(?\d{1,2}[.)]\s/.test(l)) {
+        while (i + 1 < raw0.length && raw0[i + 1] && !isListItem(raw0[i + 1])) { l = l + ' ' + raw0[i + 1]; i++; }
+      }
+      merged.push(l);
+    }
+
     // 1) separate private notes / instructions from publishable lines
     let lines = [];
-    text.split('\n').forEach(l0 => {
+    merged.forEach(l0 => {
       let l = l0.trim();
       if (!l) { lines.push(''); return; }
       const inline = l.match(INLINE_NOTE_RX);
@@ -267,7 +300,8 @@
       const bare = isListItem(l) ? stripListMark(l) : l;
       // A bare "NEVER share this." right after a line about a seed phrase / key / password is a real
       // safety warning for the reader: rewrite it so it names what not to share. Otherwise it's private.
-      const prevLine = lines.length ? lines[lines.length - 1] : '';
+      const prevIdx = (() => { for (let k = lines.length - 1; k >= 0; k--) if (lines[k]) return k; return -1; })();
+      const prevLine = prevIdx >= 0 ? lines[prevIdx] : '';
       const safety = BARE_DIRECTIVE.test(bare) && !PRIVATE_LEAD.test(bare) && prevLine && prevLine.match(SAFETY_NOUN);
       if (safety) {
         const verb = (bare.match(/\b(share|post|send|reveal|show)\b/i) || ['share'])[0].toLowerCase();
@@ -292,6 +326,16 @@
       lines = lines.slice(firstIdx + 1);
     }
 
+    // Articles with numbered sections ("1. …", "2. …") only treat those, markdown/bold and ALL-CAPS
+    // lines as headings — short lines like "Private key" or "Photo?" are part of the text.
+    const NUM_HEAD = /^\(?\d{1,2}[.)]\s+\S/;
+    const numberedMode = lines.filter((l, i) => NUM_HEAD.test(l) && !/[.:]$/.test(l) && (i === 0 || !lines[i - 1])).length >= 3;
+    const headingOk = l => {
+      if (/:$/.test(l) || joinedLines.has(l)) return false;
+      if (!numberedMode) return true;
+      return NUM_HEAD.test(l) || /^#{1,6}\s|^\*\*|^__/.test(l) || (upperRatio(l) > 0.7 && wordCount(l) >= 2);
+    };
+
     let current = { heading: '', sentences: [] };
     doc.sections.push(current);
     let para = [];
@@ -303,7 +347,9 @@
     function addSentence(sec, sText, opts) {
       const s = collapse(sText);
       if (!s) return;
-      if (isPrivateText(s)) { doc.privateNotes.push(s); return; }
+      const last = doc.sentences[doc.sentences.length - 1];
+      const safetyFollow = BARE_DIRECTIVE.test(s) && last && last.para === opts.para && SAFETY_NOUN.test(last.text);
+      if (!safetyFollow && isPrivateText(s)) { doc.privateNotes.push(s); return; }
       const k = keyOf(s);
       if (!k || seen.has(k) || k === titleKey) return; // de-duplicate
       seen.add(k);
@@ -339,7 +385,7 @@
         addSentence(current, item, { list: true, para: paraId });
         continue;
       }
-      if (prevBlank && looksLikeHeading(line, lines[i + 1]) && nextLine && (lines[i + 1] === '' || !looksLikeHeading(lines[i + 1] || 'x. x.', ''))) {
+      if (prevBlank && headingOk(line) && looksLikeHeading(line, lines[i + 1]) && nextLine && (lines[i + 1] === '' || !looksLikeHeading(lines[i + 1] || 'x. x.', ''))) {
         flushPara();
         if (keyOf(stripHeadingMarks(line)) === titleKey) continue; // repeated title
         current = { heading: stripHeadingMarks(line), sentences: [] };
@@ -364,23 +410,46 @@
       });
     });
     doc.casing = casing;
+    const paraSize = {};
+    doc.sentences.forEach(x => { paraSize[x.para] = (paraSize[x.para] || 0) + 1; });
     doc.sentences.forEach((s, idx) => {
       if (upperRatio(s.text) > 0.6 || /\b[A-Z]{3,}\b/.test(s.text.split(' ')[0] || '')) s.text = calmCase(s.text, casing);
       const prev = doc.sentences[idx - 1];
-      const samePara = !!(prev && prev.para === s.para && !s.list);
+      // one-line-paragraph writing ("Most beginners don't…" ⏎⏎ "They use exchanges.") still reads as one thought
+      const samePara = !!(prev && !s.list && (prev.para === s.para ||
+        (!prev.list && prev.section === s.section && s.firstInPara && paraSize[prev.para] === 1 && paraSize[s.para] === 1)));
       s.issues = sentenceIssues(s.text);
+      if (BARE_DIRECTIVE.test(s.text) && prev && prev.para === s.para && SAFETY_NOUN.test(prev.text)) s.issues = s.issues.filter(x => x !== 'private note or instruction');
       s.bad = s.issues.length > 0;
-      s.needsContext = needsContext(s.text, samePara) || (samePara && doc.rewrites.some(r => r.to === s.text));
+      const crossPara = samePara && prev.para !== s.para;
+      s.needsContext = needsContext(s.text, samePara && !crossPara) || (samePara && doc.rewrites.some(r => r.to === s.text));
       s.samePara = samePara;
       s.claim = claimType(s.text);
       s.question = /\?["'”’)]*$/.test(s.text);
       s.cta = CTA_RX.test(s.text) && !CTA_NEGATED.test(s.text) && wordCount(s.text) <= 40;
+    });
+    // If one half of a parallel pair was rejected ("If X…, today's price won't matter." / "If Y…, …"),
+    // the other half alone would distort the author's point, so it is left out too.
+    doc.sentences.forEach((s, idx) => {
+      if (!s.bad || s.list || s.issues.some(i => /incomplete|cut off|lead-in/.test(i))) return;
+      [doc.sentences[idx - 1], doc.sentences[idx + 1]].forEach(n => {
+        if (!n || n.bad || n.list || n.section !== s.section) return;
+        const a = new Set(contentWords(s.text)), b = contentWords(n.text);
+        const shared = b.filter(w => a.has(w)).length;
+        const sameStart = s.text.split(/\s+/)[0].toLowerCase() === n.text.split(/\s+/)[0].toLowerCase();
+        if ((sameStart && shared >= 3) || shared / Math.max(1, new Set([...a, ...b]).size) >= 0.5) {
+          n.bad = true; n.parallel = true; n.issues = ['other half of a rejected parallel pair'];
+        }
+      });
+    });
+    doc.sentences.forEach(s => {
       if (s.bad) doc.rejected.push({ text: s.text, issues: s.issues });
       if (!s.bad && s.list) doc.listItems.push(s);
       if (!s.bad && s.question) doc.questions.push(s);
       if (!s.bad && s.cta) doc.ctaLines.push(s);
     });
 
+    doc.setupKeys = setupLines;
     scoreSentences(doc);
     buildUnits(doc);
     return doc;
@@ -451,11 +520,18 @@
       cur.sents.push(s);
     });
     close();
+    units.forEach(u => {
+      // don't stop on a set-up line ("The important concept isn't the engineering.") whose answer comes later
+      while (u.sents.length > 1 && doc.setupKeys && doc.setupKeys.has(keyOf(u.sents[u.sents.length - 1].text))) u.sents.pop();
+      if (u.sents.length === 1 && doc.setupKeys && doc.setupKeys.has(keyOf(u.sents[0].text))) u.orphan = true;
+    });
     doc.units = units.map((u, i) => {
       const text = u.sents.map(s => s.text).join(' ');
       const spec = u.sents.some(s => s.claim === 'speculation');
       const mean = u.sents.reduce((a, s) => a + s.score, 0) / u.sents.length;
       let score = mean * (1 + 0.08 * (u.sents.length - 1));
+      // a lone teaser ("…with one massive difference.") promises something the unit doesn't deliver
+      if (u.sents.length === 1 && (TEASER_RX.test(text) || (/^(?:imagine|picture|think of)\b/i.test(text) && wordCount(text) < 10))) u.orphan = true; // bare analogy without its explanation
       if (u.orphan) score *= 0.3;
       return {
         id: i, text, sents: u.sents, keys: u.sents.map(s => keyOf(s.text)),
@@ -469,7 +545,11 @@
   // ---------- selection helpers ----------
   function isFree(u, used) { return u.keys.every(k => !used.has(k)); }
   function mark(u, used) { (u.keys || [keyOf(u.text || u)]).forEach(k => used.add(k)); }
-  function speakable(text) { return !/https?:|www\.|[();]|\be\.g\.|\bi\.e\.|\d\.\d{3,}/.test(text); }
+  function speakable(text) { return !/https?:|www\.|[();]|\be\.g\.|\bi\.e\.|\d\.\d{3,}|\S\/\S|\s\/\s|[=≠→]/.test(text); }
+
+  // Earlier cards' picks count against a unit, so the eight cards cover more of the article
+  // instead of all leaning on the same top-scoring sentences.
+  function spread(doc, u) { return Math.pow(0.7, (doc.useCount && doc.useCount[u.id]) || 0); }
 
   function introSection(doc) { return doc.sections.length > 1 && !doc.sections[0].heading ? 0 : -1; }
   function conclusionSection(doc) {
@@ -501,7 +581,8 @@
     let pool = usable(doc, used, Object.assign({ noQuestion: true }, o)).filter(u => !u.spec && !u.list);
     let list = c >= 0 ? pool.filter(u => u.section === c) : [];
     if (!list.length) list = pool.filter(u => u.order >= doc.sentences.length * 0.7);
-    return list.sort((a, b) => b.score - a.score).slice(0, n || 1).sort((a, b) => a.order - b.order);
+    const late = u => u.score * (1 + 0.4 * u.order / Math.max(1, doc.sentences.length)); // the author's closing words weigh more
+    return list.sort((a, b) => late(b) - late(a)).slice(0, n || 1).sort((a, b) => a.order - b.order);
   }
 
   // Best unit per body section, spread across sections, returned in source order.
@@ -511,7 +592,7 @@
     const pool = usable(doc, used, o).filter(u => (doc.sections.length < 3 || (u.section !== intro && u.section !== concl)) && !u.question && (!o.prefer || true));
     const bySection = {};
     pool.forEach(u => { (bySection[u.section] = bySection[u.section] || []).push(u); });
-    const rank = u => u.score * (o.prefer ? o.prefer(u) : 1) * (u.spec ? 0.7 : 1);
+    const rank = u => u.score * (o.prefer ? o.prefer(u) : 1) * (u.spec ? 0.7 : 1) * (o.noSpread ? 1 : spread(doc, u));
     Object.values(bySection).forEach(l => l.sort((a, b) => rank(b) - rank(a)));
     const order = Object.keys(bySection).sort((a, b) => rank(bySection[b][0]) - rank(bySection[a][0]));
     const picked = [];
@@ -539,7 +620,9 @@
   }
 
   function sourceQuestion(doc, used) {
-    const q = doc.questions.filter(s => !used.has(keyOf(s.text)) && s.text.length <= 180 && wordCount(s.text) >= 4 && !needsContextAlone(s));
+    // a discussion question that stands on its own: no quoted dialogue, no "she/he" from the story, no "that experiment"
+    const q = doc.questions.filter(s => !used.has(keyOf(s.text)) && s.text.length <= 180 && wordCount(s.text) >= 4 && !needsContextAlone(s) &&
+      !s.needsContext && !/["“”]/.test(s.text) && !/\b(?:she|her|he|him|his)\b/i.test(s.text));
     return q.length ? q[q.length - 1].text : '';
   }
   function needsContextAlone(s) { return WEAK_START.test(s.text); }
@@ -678,8 +761,9 @@
         }
         if (title && title.length <= 60) lines.push('', 'ON-SCREEN TEXT:', title);
         lines.push('', 'SCRIPT:');
-        if (h && h.sents.length > 1) { const rest = h.sents.slice(1).map(s => s.text).join(' '); lines.push(rest); spoken.push(rest); }
-        const beats = bodyPoints(doc, used, 3, { maxWords: 32, speakable: true, onePerSection: true, prefer: u => (u.list ? 0.7 : 1) });
+        if (h && h.sents.length > 1) { const rest = h.sents.slice(1).map(s => s.text).join(' '); if (speakable(rest)) { lines.push(rest); spoken.push(rest); } }
+        const beats = bodyPoints(doc, used, 3, { maxWords: 32, speakable: true, onePerSection: true, prefer: u => (u.list ? 0.7 : 1) *
+          (/\b(?:is|are|means|works|uses|lets|controls|records|verifies)\b/i.test(u.text) ? 1.3 : 1) * (u.sents.length === 1 && /^(?:imagine|think of|most|some)\b/i.test(u.text) ? 0.5 : 1) * (/["“”]/.test(u.text) ? 0.5 : 1) });
         let close = takeawayUnits(doc, used, 1, { speakable: true, maxWords: 40 })[0];
         if (close) mark(close, used);
         else if (beats.length) close = beats.pop();          // land on the last beat instead of trailing off
@@ -697,7 +781,7 @@
         ends.forEach(u => mark(u, used));
         const h = ends.length >= 2 ? null : hookUnit(doc, used, 220);
         if (h) mark(h, used);
-        const insight = bodyPoints(doc, used, 1, { maxWords: 45, facts: true, prefer: u => 1 + 0.2 * (u.sents.length - 1) - (u.list ? 0.4 : 0) });
+        const insight = bodyPoints(doc, used, 1, { maxWords: 45, facts: true, noSpread: true, prefer: u => (1 + 0.2 * (u.sents.length - 1) - (u.list ? 0.4 : 0)) * (/["“”:]/.test(u.text) ? 0.4 : 1) * (wordCount(u.text) >= 12 ? 1.3 : 1) });
         const parts = [];
         if (ends.length >= 2) {
           parts.push(P(ends[0].text));
@@ -714,22 +798,38 @@
         return text;
       }
       case 'story': {
-        // one idea, slide by slide, in source order; each slide a complete sentence
-        const units = [];
+        // one idea, slide by slide, in source order; each slide a complete sentence.
+        // Best case: the author's own step-by-step run (e.g. a "30-second version") — used as-is, in order.
         const h = hookUnit(doc, used, SOFT.storySlide);
         const hookFits = h && h.sents.every(s => s.text.length <= SOFT.storySlide);
-        if (hookFits) mark(h, used);
-        const end = takeawayUnits(doc, used, 1, { maxChars: SOFT.storySlide })[0];
-        const room = Math.max(1, Math.min(3, 6 - (hookFits ? h.sents.length : 1) - (end ? 1 : 0)));
-        const pts = bodyPoints(doc, used, room, { maxChars: SOFT.storySlide, facts: true, onePerSection: true, prefer: u => (u.sents.length === 1 ? 1.2 : 1) });
-        if (end) mark(end, used);
-        if (hookFits) units.push(h);
-        units.push(...pts);
-        if (end) units.push(end);
+        const concl = conclusionSection(doc);
+        let run = null;
+        doc.sections.forEach((sec, si) => {
+          const us = doc.units.filter(u => u.section === si && !u.orphan && !u.cta && !u.list && !u.question &&
+            u.sents.every(x => x.text.length <= SOFT.storySlide && !/["“”]/.test(x.text)) && !(hookFits && u === h));
+          const score = us.length * (si === concl ? 1.5 : 1);
+          if (us.length >= 4 && (!run || score > run.score)) run = { units: us.slice(0, hookFits ? 5 : 6), score };
+        });
+        let units;
+        if (run) {
+          units = run.units;
+          units.forEach(u => mark(u, used));
+          if (hookFits && h.order < units[0].order) { mark(h, used); units = [h].concat(units); }
+        } else {
+          units = [];
+          if (hookFits) mark(h, used);
+          const end = takeawayUnits(doc, used, 1, { maxChars: SOFT.storySlide })[0];
+          if (end) mark(end, used);
+          const room = Math.max(1, Math.min(3, 6 - (hookFits ? h.sents.length : 1) - (end ? 1 : 0)));
+          const pts = bodyPoints(doc, used, room, { maxChars: SOFT.storySlide, facts: true, onePerSection: true, prefer: u => (u.sents.length === 1 ? 1.2 : 1) });
+          if (hookFits) units.push(h);
+          units.push(...pts);
+          if (end) units.push(end);
+        }
         units.sort((a, b) => a.order - b.order); // the story follows the source's own order
         const slides = [];
         if (!hookFits && title) slides.push(title);
-        units.forEach(u => { if (u === h) u.sents.forEach(x => slides.push(x.text)); else slides.push(u.text); });
+        units.forEach(u => { if (slides.length + u.sents.length <= 6) u.sents.forEach(x => slides.push(x.text)); });
         if (doc.urls[0]) slides.push(`Link: ${doc.urls[0]}`);
         return slides.map((s, i) => `SLIDE ${i + 1}\n${s}`).join('\n\n');
       }
@@ -781,13 +881,17 @@
       }
       const body = line.replace(/^(?:→|•|-|\d+\.)\s*/, '');
       if (titleKeys.has(keyOf(body))) return; // the source's own title/heading
-      if (isPrivateText(body)) add('Contains a private note or instruction from the source');
-      splitSentences(body).forEach(s => {
+      let prevS = '';
+      const lineSents = splitSentences(body);
+      if (isPrivateText(body) && !(lineSents.length > 1 && SAFETY_NOUN.test(lineSents[0]))) add('Contains a private note or instruction from the source');
+      lineSents.forEach(s => {
+        const safetyFollow = BARE_DIRECTIVE.test(s) && SAFETY_NOUN.test(prevS);
+        prevS = s;
         if (TEMPLATE_RX.some(rx => rx.test(s))) return;
         contentSentences++;
         const k = keyOf(s);
         if (k.split(' ').length > 3) { if (seen.has(k)) add('Repeats a sentence'); seen.add(k); }
-        sentenceIssues(s).forEach(reason => add(`Unclear sentence (${reason}): “${shorten(s, 70)}”`));
+        sentenceIssues(s).filter(r => !(safetyFollow && r === 'private note or instruction')).forEach(reason => add(`Unclear sentence (${reason}): “${shorten(s, 70)}”`));
         if (!opts.edited) {
           if (!doc.sourceKey.includes(' ' + k + ' ')) add(`Not found in source: “${shorten(s, 70)}”`);
           (s.match(/\d[\d,.]*\d|\d/g) || []).forEach(n => { if (!doc.sourceKey.includes(keyOf(n))) add(`Number not in source: ${n}`); });
@@ -812,7 +916,12 @@
       if (slides.length < 2) add('Story needs at least 2 slides');
       if (slides.some(s => s.length > SOFT.storySlide && !/^Link: /.test(s))) add(`A slide is over ${SOFT.storySlide} characters`);
       if (!opts.edited) {
-        const orders = slides.map(s => { const hit = doc.sentences.find(x => keyOf(s).startsWith(keyOf(x.text))); return hit ? hit.order : null; }).filter(o => o !== null);
+        const orders = slides.map(s => {
+          const k = keyOf(s);
+          const hits = doc.sentences.filter(x => k === keyOf(x.text) || k.startsWith(keyOf(x.text) + ' '));
+          const hit = hits.sort((a, b) => keyOf(b.text).length - keyOf(a.text).length)[0]; // the sentence the slide starts with, not a shorter look-alike
+          return hit ? hit.order : null;
+        }).filter(o => o !== null);
         if (orders.some((o, i) => i && o < orders[i - 1])) add('Slides are out of order');
       }
     }
@@ -826,7 +935,14 @@
     const doc = parse(raw);
     const outputs = {};
     const checks = {};
-    kinds.forEach(k => { outputs[k] = generate(k, doc); checks[k] = validate(k, outputs[k], doc); });
+    doc.useCount = {};
+    kinds.forEach(k => {
+      outputs[k] = generate(k, doc);
+      checks[k] = validate(k, outputs[k], doc);
+      const outKey = ' ' + keyOf(outputs[k]) + ' ';
+      doc.units.forEach(u => { if (u.keys.every(key => outKey.includes(' ' + key + ' '))) doc.useCount[u.id] = (doc.useCount[u.id] || 0) + 1; });
+    });
+    delete doc.useCount;
     return { doc, outputs, checks };
   }
 
