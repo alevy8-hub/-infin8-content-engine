@@ -1,0 +1,38 @@
+Bitcoin Explained: A Beginner's Guide to Digital Money
+
+Most people first hear about Bitcoin through price headlines. But the price is the least interesting part of the story. Bitcoin is a new way to move and hold value without needing a bank in the middle.
+
+1. What Is Bitcoin?
+
+Bitcoin is a digital currency that runs on a public network of computers instead of a central company or government. It was introduced in 2008 in a white paper published under the name Satoshi Nakamoto, and the network went live in January 2009. Anyone with an internet connection can send or receive bitcoin, any time of day.
+
+2. How Does the Blockchain Work?
+
+Every Bitcoin transaction is recorded on a shared ledger called the blockchain. New transactions are grouped into blocks, and a new block is added roughly every 10 minutes. Thousands of independent computers, called nodes, keep a copy of that ledger and check each other's work. Because everyone holds the same record, no single person can quietly change the history.
+
+3. Why Is the Supply Limited?
+
+Only 21 million bitcoin will ever exist. New coins are released to miners as a reward for securing the network, and that reward is cut in half about every four years in an event called the halving. This fixed schedule is written into the software, which is why many people compare Bitcoin to digital gold.
+
+4. What Is a Satoshi?
+
+You do not need to buy a whole bitcoin. Each bitcoin can be divided into 100 million smaller units called satoshis, so one satoshi equals 0.00000001 BTC. That means you can start with a few dollars instead of thousands.
+
+5. How Do You Keep Bitcoin Safe?
+
+Your bitcoin is controlled by a private key, which works like a master password. Whoever holds the key controls the coins. A few simple habits go a long way:
+
+- Never share your private key or recovery phrase with anyone.
+- Write your recovery phrase on paper and store it somewhere safe.
+- Turn on two-factor authentication for any exchange account.
+- Start small while you learn how wallets work.
+
+6. The Risks You Should Know
+
+Bitcoin's price can move up or down by large amounts in a single day. Transactions cannot be reversed, so sending to the wrong address usually means the money is gone. Scams often promise guaranteed returns, and real investments never do.
+
+The Bottom Line
+
+Bitcoin is not a get-rich-quick scheme. It is a new financial tool that rewards patience, curiosity, and careful security habits. The best first step is to understand how it works before you put any money into it.
+
+If this guide helped, subscribe for the next lesson on how Bitcoin wallets work.

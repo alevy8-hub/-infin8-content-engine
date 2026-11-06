@@ -1,11 +1,20 @@
-
 const source = document.getElementById('source');
 const sourceCount = document.getElementById('sourceCount');
 const distributeBtn = document.getElementById('distributeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const replaceBtn = document.getElementById('replaceBtn');
+const notice = document.getElementById('notice');
+const noticeText = document.getElementById('noticeText');
+const noticeAction = document.getElementById('noticeAction');
 const results = document.getElementById('results');
 const assetGrid = document.getElementById('assetGrid');
 const template = document.getElementById('assetTemplate');
 const timeSaved = document.getElementById('timeSaved');
+const sourceUsed = document.getElementById('sourceUsed');
+const staleBanner = document.getElementById('staleBanner');
+
+const STORE_KEY = 'infin8-content-engine';
+const MINUTES_PER_DRAFT = 5; // stated assumption, shown in the UI
 
 const platforms = [
   { name: 'X', kind: 'x' },
@@ -18,125 +27,196 @@ const platforms = [
   { name: 'CTA', kind: 'cta' }
 ];
 
+// ---------- local saving (same storage key as before, so saved work carries over) ----------
 function getSavedState() {
   try {
-    return JSON.parse(localStorage.getItem('infin8-content-engine') || '{}');
+    return JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
   } catch {
     return {};
   }
 }
+function setSavedState(patch) {
+  const next = Object.assign({}, getSavedState(), patch);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(next)); } catch { /* storage full or blocked */ }
+  return next;
+}
 
-const initialSaved = getSavedState();
-if (initialSaved.source) source.value = initialSaved.source;
+function fingerprint(text) {
+  // small, stable hash of the source so we know when drafts are out of date
+  let h = 2166136261;
+  const s = String(text || '').trim();
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + ':' + s.length;
+}
 
+// ---------- notices / undo ----------
+let noticeTimer = null;
+let undoHandler = null;
+function showNotice(message, actionLabel, onAction, ms = 7000) {
+  noticeText.textContent = message;
+  undoHandler = onAction || null;
+  if (actionLabel && onAction) {
+    noticeAction.textContent = actionLabel;
+    noticeAction.classList.remove('hidden');
+  } else {
+    noticeAction.classList.add('hidden');
+  }
+  notice.classList.remove('hidden');
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(hideNotice, ms);
+}
+function hideNotice() {
+  notice.classList.add('hidden');
+  undoHandler = null;
+}
+noticeAction.addEventListener('click', () => {
+  const fn = undoHandler;
+  hideNotice();
+  if (fn) fn();
+});
+
+// ---------- source field ----------
 function updateCount() {
   sourceCount.textContent = `${source.value.length.toLocaleString()} characters`;
 }
-updateCount();
+
+function updateStale() {
+  const saved = getSavedState();
+  const hasResults = !results.classList.contains('hidden');
+  const stale = hasResults && saved.sourceHash && saved.sourceHash !== fingerprint(source.value);
+  staleBanner.classList.toggle('hidden', !stale);
+  document.querySelectorAll('.asset').forEach(card => card.classList.toggle('is-stale', !!stale));
+  document.querySelectorAll('.asset').forEach(card => refreshStatus(card));
+}
 
 source.addEventListener('input', () => {
   updateCount();
-  const current = getSavedState();
-  localStorage.setItem('infin8-content-engine', JSON.stringify({
-    source: source.value,
-    outputs: current.outputs || {}
-  }));
+  setSavedState({ source: source.value });
+  updateStale();
 });
 
-function cleanText(text) {
-  return text.replace(/\s+/g, ' ').trim();
+function snapshot() {
+  return JSON.parse(JSON.stringify(getSavedState()));
 }
-
-function firstSentences(text, count = 2) {
-  const parts = cleanText(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
-  return parts.slice(0, count).join(' ').trim();
-}
-
-function keywords(text) {
-  const stop = new Set(
-    'the a an and or but if then to of in on for with is are was were be been being it this that these those i you we they he she them our your my from as at by about into than so just'
-      .split(' ')
-  );
-  const words = cleanText(text).toLowerCase().match(/[a-z0-9$#]+/g) || [];
-  const counts = {};
-  words.forEach(w => {
-    if (!stop.has(w) && w.length > 3) counts[w] = (counts[w] || 0) + 1;
-  });
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(([w]) => w);
-}
-
-function transform(kind, text) {
-  const clean = cleanText(text);
-  const opener = firstSentences(clean, 1) || clean.slice(0, 160);
-  const two = firstSentences(clean, 2);
-  const keys = keywords(clean);
-  const tags = keys.length
-    ? keys.map(k => `#${k.replace(/[^a-z0-9]/g, '')}`).join(' ')
-    : '#content #creator';
-
-  switch (kind) {
-    case 'x':
-      return `${opener}\n\n${two !== opener ? two : ''}\n\nCreate once. Distribute iNFiN8. ♾️`
-        .trim()
-        .slice(0, 900);
-    case 'linkedin':
-      return `${opener}\n\nMost creators do not have a content problem. They have a distribution problem.\n\n${two}\n\nThe opportunity is to turn work that already exists into more reach, more leverage, and more time back.\n\nCreate Once. Distribute iNFiN8. ♾️`;
-    case 'instagram':
-      return `${opener}\n\n${two}\n\nOne idea should not live once.\n\nCreate it once. Adapt it. Distribute it. Compound it. ♾️\n\n${tags}`;
-    case 'facebook':
-      return `${opener}\n\n${two}\n\nThis is the part I keep coming back to: we spend so much time creating, then let the value disappear after one post.\n\nWhat if the better move is to keep putting the work we already did back to work?`;
-    case 'reels':
-      return `HOOK:\nYou probably do not need more content. You need to use the content you already made.\n\nSCRIPT:\n${two}\n\nMost creators are sitting on months or years of unused value. The opportunity is to turn one strong idea into multiple platform-ready assets instead of starting from zero every day.\n\nCLOSE:\nCreate once. Distribute iNFiN8. ♾️`;
-    case 'substack':
-      return `${opener}\n\n${two}\n\nThe question is not always “What should I create next?”\n\nSometimes it is: “What have I already created that still has value left in it?” ♾️`;
-    case 'story':
-      return `YOU ALREADY CREATED THE VALUE.\n\nNOW DISTRIBUTE IT.\n\n1 SOURCE → MULTIPLE ASSETS\n\nLess repeated work.\nMore reach.\nMore time back.\n\n♾️`;
-    case 'cta':
-      return `You already did the hard part: creating something worth sharing.\n\nNow put it back to work.\n\nCreate Once. Distribute iNFiN8. ♾️`;
-    default:
-      return clean;
+function restore(snap) {
+  localStorage.setItem(STORE_KEY, JSON.stringify(snap));
+  source.value = snap.source || '';
+  updateCount();
+  if (snap.outputs && Object.keys(snap.outputs).length && snap.source) {
+    renderOutputs(snap.source, true);
+  } else {
+    results.classList.add('hidden');
   }
+  updateStale();
+}
+
+clearBtn.addEventListener('click', () => {
+  const hasAnything = source.value.trim() || !results.classList.contains('hidden');
+  if (!hasAnything) { source.focus(); return; }
+  const snap = snapshot();
+  source.value = '';
+  localStorage.removeItem(STORE_KEY);
+  assetGrid.innerHTML = '';
+  results.classList.add('hidden');
+  updateCount();
+  updateStale();
+  showNotice('Cleared the source and all 8 drafts.', 'UNDO', () => restore(snap));
+  source.focus();
+});
+
+replaceBtn.addEventListener('click', async () => {
+  const before = source.value;
+  const snap = snapshot();
+  let pasted = '';
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) pasted = await navigator.clipboard.readText();
+  } catch { pasted = ''; }
+
+  if (pasted && pasted.trim()) {
+    source.value = pasted;
+    updateCount();
+    setSavedState({ source: source.value });
+    updateStale();
+    showNotice(`Replaced with ${pasted.length.toLocaleString()} characters from your clipboard. Tap DISTRIBUTE ♾️ when ready.`,
+      before.trim() ? 'UNDO' : null, before.trim() ? () => restore(snap) : null);
+    source.scrollTop = 0;
+  } else {
+    // Clipboard not available (permission / browser): empty the field so a single paste replaces it.
+    source.value = '';
+    updateCount();
+    setSavedState({ source: '' });
+    updateStale();
+    source.focus();
+    showNotice('Field emptied — long-press (or ⌘V / Ctrl+V) and Paste your new content.',
+      before.trim() ? 'UNDO' : null, before.trim() ? () => restore(snap) : null, 10000);
+  }
+});
+
+// ---------- cards ----------
+function refreshStatus(card) {
+  const kind = card.dataset.kind;
+  const output = card.querySelector('.asset-output');
+  const status = card.querySelector('.status');
+  const count = card.querySelector('.asset-count');
+  const limit = Infin8Engine.LIMITS[kind];
+  const len = output.value.length;
+  count.textContent = limit ? `${len.toLocaleString()} / ${limit.toLocaleString()} characters` : `${len.toLocaleString()} characters`;
+  let label = 'READY';
+  let cls = '';
+  if (!output.value.trim()) { label = 'EMPTY'; cls = 'warn'; }
+  else if (limit && len > limit) { label = 'TOO LONG'; cls = 'warn'; }
+  else if (card.classList.contains('is-stale')) { label = 'OUT OF DATE'; cls = 'warn'; }
+  else if (card.dataset.edited === '1') { label = 'EDITED'; cls = 'edited'; }
+  status.textContent = label;
+  status.className = 'status' + (cls ? ' ' + cls : '');
+  count.classList.toggle('over', !!(limit && len > limit));
 }
 
 function saveCurrentOutputs() {
   const outputs = {};
-  document.querySelectorAll('.asset').forEach((card, i) => {
-    outputs[platforms[i].kind] = card.querySelector('.asset-output').value;
+  const edited = {};
+  document.querySelectorAll('.asset').forEach(card => {
+    outputs[card.dataset.kind] = card.querySelector('.asset-output').value;
+    if (card.dataset.edited === '1') edited[card.dataset.kind] = true;
   });
+  setSavedState({ source: source.value, outputs, edited });
+}
 
-  localStorage.setItem(
-    'infin8-content-engine',
-    JSON.stringify({
-      source: source.value,
-      outputs
-    })
-  );
+function hasEditedDrafts() {
+  return Array.from(document.querySelectorAll('.asset')).some(c => c.dataset.edited === '1');
 }
 
 function renderOutputs(text, useSavedOutputs = false) {
   assetGrid.innerHTML = '';
   const savedNow = getSavedState();
+  const { doc, outputs } = Infin8Engine.generateAll(text, platforms.map(p => p.kind));
 
   platforms.forEach((platform, index) => {
     const node = template.content.cloneNode(true);
+    const card = node.querySelector('.asset');
     const output = node.querySelector('.asset-output');
+    card.dataset.kind = platform.kind;
 
     node.querySelector('.asset-number').textContent = `0${index + 1}`;
     node.querySelector('.asset-title').textContent = platform.name;
 
-    if (useSavedOutputs && savedNow.outputs && savedNow.outputs[platform.kind]) {
+    if (useSavedOutputs && savedNow.outputs && typeof savedNow.outputs[platform.kind] === 'string') {
       output.value = savedNow.outputs[platform.kind];
+      if (savedNow.edited && savedNow.edited[platform.kind]) card.dataset.edited = '1';
     } else {
-      output.value = transform(platform.kind, text);
+      output.value = outputs[platform.kind];
     }
 
     node.querySelector('.copy-btn').addEventListener('click', async e => {
-      await navigator.clipboard.writeText(output.value);
       const btn = e.currentTarget;
       const old = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(output.value);
+      } catch {
+        output.focus();
+        output.select();
+        document.execCommand && document.execCommand('copy');
+      }
       btn.textContent = 'COPIED';
       btn.classList.add('copied');
       setTimeout(() => {
@@ -156,17 +236,32 @@ function renderOutputs(text, useSavedOutputs = false) {
       a.href = URL.createObjectURL(blob);
       a.download = `infin8-${platform.kind}.txt`;
       a.click();
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
 
-    output.addEventListener('input', saveCurrentOutputs);
+    output.addEventListener('input', () => {
+      card.dataset.edited = '1';
+      refreshStatus(card);
+      saveCurrentOutputs();
+    });
     assetGrid.appendChild(node);
   });
 
-  const approx = Math.max(18, Math.min(88, Math.round(text.length / 100)));
-  timeSaved.textContent = `${approx} min`;
+  timeSaved.textContent = `~${platforms.length * MINUTES_PER_DRAFT} min`;
+  const secCount = doc.sections.filter(s => s.sentences.length).length;
+  sourceUsed.textContent = doc.sentences.length
+    ? `Drafts pulled from all ${doc.sentences.length} sentences${secCount > 1 ? ` across ${secCount} sections` : ''}${doc.title ? ` · Title: “${doc.title}”` : ''}. Facts and sentences come only from your source — review before posting.`
+    : '';
   results.classList.remove('hidden');
+
+  if (!useSavedOutputs) {
+    setSavedState({ sourceHash: fingerprint(text) });
+  } else if (!savedNow.sourceHash) {
+    // older saved state (before this version): assume drafts match what was saved
+    setSavedState({ sourceHash: fingerprint(savedNow.source || text) });
+  }
   saveCurrentOutputs();
+  updateStale();
 }
 
 distributeBtn.addEventListener('click', () => {
@@ -178,13 +273,22 @@ distributeBtn.addEventListener('click', () => {
     return;
   }
 
+  if (hasEditedDrafts() && !confirm('You edited some drafts. DISTRIBUTE ♾️ will replace all 8 with fresh drafts. Continue?')) {
+    return;
+  }
+
   renderOutputs(text, false);
+  hideNotice();
 
   setTimeout(() => {
     results.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 120);
 });
 
+// ---------- boot ----------
+const initialSaved = getSavedState();
+if (initialSaved.source) source.value = initialSaved.source;
+updateCount();
 if (initialSaved.source && initialSaved.source.trim()) {
   renderOutputs(initialSaved.source, true);
 }

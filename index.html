@@ -21,11 +21,21 @@
     </section>
 
     <section class="composer card">
-      <label for="source">SOURCE CONTENT</label>
+      <div class="composer-top">
+        <label for="source">SOURCE CONTENT</label>
+        <div class="source-tools">
+          <button id="replaceBtn" class="secondary tool-btn" type="button">REPLACE CONTENT</button>
+          <button id="clearBtn" class="secondary tool-btn" type="button">CLEAR ALL</button>
+        </div>
+      </div>
       <textarea id="source" placeholder="Paste your article, post, transcript, idea, or story…"></textarea>
+      <div id="notice" class="notice hidden" role="status" aria-live="polite">
+        <span id="noticeText"></span>
+        <button id="noticeAction" class="notice-action hidden" type="button"></button>
+      </div>
       <div class="composer-actions">
         <span id="sourceCount" class="muted">0 characters</span>
-        <button id="distributeBtn" class="primary">DISTRIBUTE ♾️</button>
+        <button id="distributeBtn" class="primary" type="button">DISTRIBUTE ♾️</button>
       </div>
     </section>
 
@@ -36,9 +46,14 @@
           <h2>1 SOURCE → 8 ASSETS</h2>
         </div>
         <div class="metric">
-          <span>ESTIMATED TIME SAVED</span>
-          <strong id="timeSaved">43 min</strong>
+          <span>ROUGH ESTIMATE · TIME SAVED</span>
+          <strong id="timeSaved">~40 min</strong>
+          <small>Assumes ~5 min to hand-write each of 8 drafts. Not measured.</small>
         </div>
+      </div>
+      <p id="sourceUsed" class="source-used muted"></p>
+      <div id="staleBanner" class="stale-banner hidden" role="status">
+        Source changed since these drafts were made. Tap <strong>DISTRIBUTE ♾️</strong> to refresh them.
       </div>
 
       <div id="assetGrid" class="asset-grid"></div>
@@ -60,6 +75,9 @@
         </div>
         <span class="status">READY</span>
       </div>
+      <div class="asset-meta">
+        <span class="asset-count muted"></span>
+      </div>
       <textarea class="asset-output"></textarea>
       <div class="asset-actions">
         <button class="secondary copy-btn">COPY</button>
@@ -69,6 +87,7 @@
     </article>
   </template>
 
+  <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
