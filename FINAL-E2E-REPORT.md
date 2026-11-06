@@ -1,7 +1,7 @@
 # FINAL END-TO-END QC — DJ’s ORIGINAL article
 
 Source: `tests/samples/bitcoin-explained-to-an-adolescent-ORIGINAL.txt` — exact file DJ attached (13,159 bytes, md5 `04e34eeab6b479cd7dfd6958ad74b90c`, verified). **No stand-in used.** The source text was not edited.
-Branch `content-engine-preview` · live `main` untouched · generated 11/6/2026, 2:38:28 PM CT.
+Branch `content-engine-preview` · live `main` untouched · generated 11/6/2026, 2:39:11 PM CT.
 
 ## Eight-card result (actual text from the app, mobile 390px run)
 
@@ -240,7 +240,19 @@ PASS no page errors
 ### Same test against the live preview URL (after push)
 
 ```text
-(not run yet)
+source md5 04e34eeab6b479cd7dfd6958ad74b90c bytes 13159 url https://htmlpreview.github.io/?https://github.com/alevy8-hub/-infin8-content-engine/blob/content-engine-preview/index.html
+PASS mobile 390px: 8 cards rendered — X | LinkedIn | Instagram | Facebook | TikTok / Reels | Substack Note | Story | CTA
+PASS statuses — x:READY linkedin:READY instagram:READY facebook:READY reels:READY substack:READY story:READY cta:NEEDS REVIEW
+PASS no private note / bad sentence in any card
+source line: Drafts pulled from 257 sentences across 24 sections · Title: “Bitcoin Explained To An Adolescent”. Left out: 50 fragments or unclear lines. Facts and sentences come only from your source — review before posting.
+PASS mobile COPY: all 8 cards copy their exact text (label → COPIED) — 8/8
+PASS mobile EXPORT: all 8 cards download infin8-<card>.txt with exact text — 8/8 · files: infin8-cta.txt, infin8-facebook.txt, infin8-instagram.txt, infin8-linkedin.txt, infin8-reels.txt, infin8-story.txt, infin8-substack.txt, infin8-x.txt
+PASS mobile EDIT: focuses the card, typing works, status → EDITED, counter updates — EDITED · 456 / 2,000 characters
+PASS edit kept after reload — EDITED
+PASS CTA: after the link is filled in, NEEDS REVIEW clears (→ EDITED) — EDITED
+PASS no page errors
+
+9/9 checks passed
 ```
 
 ### Node engine tests — `node tests/engine.test.js`
